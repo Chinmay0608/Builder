@@ -1,0 +1,488 @@
+#!/usr/bin/env python3
+"""
+resume_tailor.py — Core engine to tailor a LaTeX resume for a specific job posting using Groq.
+
+Usage:
+    python resume_tailor.py --resume master.tex --job job.txt --output out.tex
+    python resume_tailor.py --resume master.tex --job "Raw JD text" --output out.tex
+    python resume_tailor.py --resume master.tex --job-url "https://example.com/job" --output out.tex
+    python resume_tailor.py --resume master.tex --job job.txt --company "Acme" --role "SWE" --compile
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from html.parser import HTMLParser
+
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+
+# --------------------------------------------------------------------------
+# Environment Variable / .env Loader (Standard Library only)
+# --------------------------------------------------------------------------
+
+def load_dotenv_if_present():
+    """
+    Lightweight .env loader using only the Python standard library.
+    Checks CWD, script directory, and ~/.resume_tailor/.env.
+    """
+    candidates = [
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.expanduser("~/.resume_tailor/.env"),
+    ]
+    for env_path in candidates:
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        key, val = line.split("=", 1)
+                        key = key.strip()
+                        val = val.strip().strip("'\"")
+                        if key and key not in os.environ:
+                            os.environ[key] = val
+            except Exception:
+                pass
+
+
+# --------------------------------------------------------------------------
+# HTML-to-Plaintext Parser (Standard Library only)
+# --------------------------------------------------------------------------
+
+class _HTMLTextExtractor(HTMLParser):
+    """
+    Strips HTML tags and scripts/styles, returning clean plaintext
+    using only Python's standard library html.parser.
+    """
+    def __init__(self):
+        super().__init__()
+        self.chunks = []
+        self._skip = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in ("script", "style", "noscript", "head", "title", "meta"):
+            self._skip = True
+
+    def handle_endtag(self, tag):
+        if tag.lower() in ("script", "style", "noscript", "head", "title", "meta"):
+            self._skip = False
+        if tag.lower() in ("p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "section", "article"):
+            self.chunks.append("\n")
+
+    def handle_data(self, data):
+        if not self._skip:
+            self.chunks.append(data)
+
+    def get_text(self) -> str:
+        text = "".join(self.chunks)
+        # Collapse multiple horizontal spaces/tabs into single space
+        text = re.sub(r"[ \t]+", " ", text)
+        # Collapse 3+ consecutive newlines into 2
+        text = re.sub(r"\n\s*\n+", "\n\n", text)
+        return text.strip()
+
+
+def fetch_job_from_url(url: str) -> str:
+    """
+    Fetches web content from the given URL and strips HTML to plain text.
+    Warns if content seems suspiciously short (e.g. JS-rendered SPA).
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            raw_html = resp.read().decode("utf-8", errors="ignore")
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Failed to fetch job URL '{url}': {e}") from e
+
+    parser = _HTMLTextExtractor()
+    parser.feed(raw_html)
+    text = parser.get_text()
+
+    if len(text) < 200:
+        print(
+            "[warn] Fetched page text is very short (< 200 chars). "
+            "The site may require JavaScript to render. "
+            "If the result is incomplete, copy and paste the job description manually.",
+            file=sys.stderr,
+        )
+    return text
+
+
+def load_job_description(args: argparse.Namespace) -> str:
+    """
+    Loads the job description from --job-url, a file path passed to --job,
+    or raw text passed to --job.
+    """
+    if args.job_url:
+        return fetch_job_from_url(args.job_url)
+
+    if args.job:
+        # Check if the argument is an existing file path
+        if os.path.isfile(args.job):
+            try:
+                with open(args.job, "r", encoding="utf-8") as f:
+                    return f.read()
+            except OSError as e:
+                raise RuntimeError(f"Could not read job description file '{args.job}': {e}") from e
+        # Otherwise treat as raw text
+        return args.job
+
+    raise ValueError("Provide --job (file path or text) or --job-url.")
+
+
+# --------------------------------------------------------------------------
+# Groq API Client (Urllib / Standard Library)
+# --------------------------------------------------------------------------
+
+def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str) -> str:
+    """
+    Calls the Groq chat completions API using urllib.request.
+    """
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 8192,
+    }
+    json_data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        GROQ_API_URL,
+        data=json_data,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "ResumeTailor/1.0",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            response_body = resp.read().decode("utf-8")
+            response_json = json.loads(response_body)
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Groq API error (HTTP {e.code}): {err_body}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Groq network connection error: {e}") from e
+
+    try:
+        return response_json["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f"Unexpected response format from Groq API: {response_body}") from e
+
+
+# --------------------------------------------------------------------------
+# LaTeX Extraction & Validation
+# --------------------------------------------------------------------------
+
+def extract_latex(model_output: str) -> str:
+    """
+    Strips markdown code fences (```latex ... ``` or ``` ...) if present.
+    """
+    fence_match = re.search(r"```(?:latex|tex)?\s*\n?(.*?)\n?```", model_output, re.DOTALL)
+    if fence_match:
+        return fence_match.group(1).strip()
+    return model_output.strip()
+
+
+def braces_balanced(tex: str) -> bool:
+    """
+    Checks whether curly braces { } in LaTeX are balanced,
+    ignoring escaped braces (\\{ and \\}).
+    """
+    depth = 0
+    escaped = False
+    for ch in tex:
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        if depth < 0:
+            return False
+    return depth == 0
+
+
+def looks_like_latex(tex: str) -> bool:
+    """
+    Validates that the output contains standard LaTeX markup indicators.
+    """
+    has_doc_class = r"\documentclass" in tex
+    has_begin_doc = r"\begin{document}" in tex
+    has_section = r"\section" in tex
+    return has_doc_class or has_begin_doc or has_section
+
+
+# --------------------------------------------------------------------------
+# System & User Prompts
+# --------------------------------------------------------------------------
+
+SYSTEM_PROMPT = """You are an elite executive resume writer and ATS (Applicant Tracking System) optimization specialist who edits LaTeX resumes.
+
+STRICT RULES:
+1. Output ONLY complete, compilable LaTeX source code. No explanations, no markdown fences, no conversational commentary before or after.
+2. NEVER change the document structure: documentclass, packages, geometry, fonts, custom commands/macros, environments, or formatting/styling commands. Preserve them EXACTLY as given.
+3. ONLY modify the actual resume CONTENT:
+   - Bullet point wording and action verbs (make them impactful, metrics-driven, and aligned with the target role).
+   - Summary / Objective / Profile section text.
+   - Ordering and prioritization of bullets within a job/section (put the most relevant accomplishments first).
+   - Ordering and grouping of skills in Skills / Technical Skills sections (put high-priority matching skills first).
+4. NEVER invent employers, job titles, employment dates, degrees, certifications, or fabricated metrics/claims that are not in the original resume.
+5. Weave in important keywords, tools, frameworks, and domain phrasing from the job description wherever they truthfully reflect or match the candidate's existing experience, for maximum ATS score.
+6. Keep the resume to roughly the same length as the original (do not cause extra page overflow).
+7. Ensure all LaTeX braces, escapes (e.g. \\%, \\&, \\$), and syntax remain 100% valid so the document compiles without errors.
+8. If there is a Skills or Technical Skills section, reorder the items so the most relevant ones appear first without deleting any truthful entries.
+"""
+
+
+def build_user_prompt(resume_tex: str, job_description: str, company: str, role: str) -> str:
+    """
+    Constructs the prompt sent to Groq with context, JD, and current LaTeX resume.
+    """
+    target_info = []
+    if company:
+        target_info.append(f"Company: {company}")
+    if role:
+        target_info.append(f"Target Role: {role}")
+    target_header = "\n".join(target_info)
+    if target_header:
+        target_header = f"TARGET APPLICATION:\n{target_header}\n\n"
+
+    return f"""{target_header}TARGET JOB DESCRIPTION:
+==================================================
+{job_description.strip()}
+==================================================
+
+MASTER RESUME LATEX SOURCE:
+==================================================
+{resume_tex.strip()}
+==================================================
+
+Rewrite the master resume LaTeX above to tailor it precisely for the target job description according to all your instructions.
+Return ONLY the full updated LaTeX source code, starting from \\documentclass (or the first line) to \\end{{document}}.
+"""
+
+
+# --------------------------------------------------------------------------
+# PDF Compilation
+# --------------------------------------------------------------------------
+
+def compile_pdf(tex_path: str) -> bool:
+    """
+    Compiles the LaTeX file to PDF by running pdflatex twice.
+    Gracefully warns if pdflatex is not found on PATH.
+    """
+    if not shutil.which("pdflatex"):
+        print(
+            "[warn] 'pdflatex' was not found on PATH — skipping PDF compilation.\n"
+            "       Install TeX Live, MacTeX, or MiKTeX if you want automatic PDF builds.",
+            file=sys.stderr,
+        )
+        return False
+
+    abs_tex = os.path.abspath(tex_path)
+    work_dir = os.path.dirname(abs_tex) or "."
+    base_name = os.path.splitext(os.path.basename(abs_tex))[0]
+    pdf_path = os.path.join(work_dir, f"{base_name}.pdf")
+
+    print("[compile] Running pdflatex (pass 1/2)...")
+    res1 = subprocess.run(
+        ["pdflatex", "-interaction=nonstopmode", "-output-directory", work_dir, abs_tex],
+        capture_output=True,
+        text=True,
+    )
+
+    print("[compile] Running pdflatex (pass 2/2)...")
+    res2 = subprocess.run(
+        ["pdflatex", "-interaction=nonstopmode", "-output-directory", work_dir, abs_tex],
+        capture_output=True,
+        text=True,
+    )
+
+    if os.path.isfile(pdf_path) and res2.returncode == 0:
+        print(f"[compile] PDF successfully generated: {pdf_path}")
+        return True
+    elif os.path.isfile(pdf_path):
+        print(f"[compile] PDF generated with warnings: {pdf_path}")
+        return True
+    else:
+        print("[compile] [error] PDF compilation failed.", file=sys.stderr)
+        log_snippet = (res2.stdout or res1.stdout or "")[-2000:]
+        if log_snippet:
+            print(f"----- pdflatex output (tail) -----\n{log_snippet}", file=sys.stderr)
+        return False
+
+
+# --------------------------------------------------------------------------
+# Main CLI Entry Point
+# --------------------------------------------------------------------------
+
+def main():
+    load_dotenv_if_present()
+
+    parser = argparse.ArgumentParser(
+        description="Resume Tailor — Tailor a LaTeX resume for a specific job posting using Groq AI."
+    )
+    parser.add_argument(
+        "--resume",
+        required=True,
+        help="Path to your master .tex resume file",
+    )
+    parser.add_argument(
+        "--job",
+        help="Job description as raw text OR path to a .txt file containing it",
+    )
+    parser.add_argument(
+        "--job-url",
+        help="URL of the job posting to fetch and parse",
+    )
+    parser.add_argument(
+        "--company",
+        default="",
+        help="Target company name (used for context and default filename)",
+    )
+    parser.add_argument(
+        "--role",
+        default="",
+        help="Target role/title (used for context and default filename)",
+    )
+    parser.add_argument(
+        "--output",
+        help="Output .tex file path (default: auto-named as {resume_base}_{company}_{role}.tex)",
+    )
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Groq model name (default: {DEFAULT_MODEL})",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Compile output .tex to PDF using pdflatex",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("GROQ_API_KEY"),
+        help="Groq API key (defaults to GROQ_API_KEY environment variable)",
+    )
+
+    args = parser.parse_args()
+
+    # Validate API key
+    api_key = args.api_key or os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        sys.exit("[error] No Groq API key provided. Set GROQ_API_KEY environment variable or pass --api-key.")
+
+    # Validate resume file
+    if not os.path.isfile(args.resume):
+        sys.exit(f"[error] Master resume file not found: {args.resume}")
+
+    try:
+        with open(args.resume, "r", encoding="utf-8") as f:
+            resume_tex = f.read()
+    except OSError as e:
+        sys.exit(f"[error] Failed to read resume file: {e}")
+
+    # [1/4] Load Job Description
+    print("[1/4] Loading job description...")
+    try:
+        job_description = load_job_description(args)
+    except Exception as e:
+        sys.exit(f"[error] Failed to load job description: {e}")
+
+    if not job_description or len(job_description.strip()) < 30:
+        sys.exit("[error] Job description is empty or too short (< 30 characters).")
+
+    # [2/4] Call Groq API
+    print(f"[2/4] Sending to Groq ({args.model}) for tailoring...")
+    user_prompt = build_user_prompt(resume_tex, job_description, args.company, args.role)
+    try:
+        raw_output = call_groq(SYSTEM_PROMPT, user_prompt, args.model, api_key)
+    except Exception as e:
+        sys.exit(f"[error] Groq API call failed: {e}")
+
+    # [3/4] Validate LaTeX output
+    print("[3/4] Validating LaTeX output...")
+    tailored_tex = extract_latex(raw_output)
+
+    if not looks_like_latex(tailored_tex):
+        sys.exit(
+            "[error] Model output does not appear to be valid LaTeX. "
+            "Aborting without writing any file.\n"
+            "----- RAW MODEL OUTPUT (first 800 chars) -----\n"
+            + raw_output[:800]
+        )
+
+    if not braces_balanced(tailored_tex):
+        print(
+            "[warn] Curly braces in generated LaTeX appear unbalanced. "
+            "Writing file, but please review the LaTeX syntax carefully.",
+            file=sys.stderr,
+        )
+
+    # Determine output file path
+    if args.output:
+        out_path = args.output
+    else:
+        base_name = os.path.splitext(os.path.basename(args.resume))[0]
+        tag_parts = [p.strip() for p in (args.company, args.role) if p.strip()]
+        tag = "_".join(tag_parts).replace(" ", "_") if tag_parts else "tailored"
+        # Sanitize filename
+        tag = re.sub(r'[\\/*?:"<>|]', "_", tag)
+        out_path = f"{base_name}_{tag}.tex"
+
+    # Ensure target directory exists
+    out_dir = os.path.dirname(os.path.abspath(out_path))
+    if out_dir and not os.path.isdir(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(tailored_tex)
+    except OSError as e:
+        sys.exit(f"[error] Failed to write tailored resume to '{out_path}': {e}")
+
+    # [4/4] Output saved
+    print(f"[4/4] Successfully saved tailored resume to: {out_path}\n")
+
+    # Always output the tailored LaTeX code to stdout for easy copy-pasting (e.g. Overleaf)
+    print("=" * 70)
+    print("TAILORED LATEX SOURCE CODE (Ready to copy/paste):")
+    print("=" * 70)
+    print(tailored_tex)
+    print("=" * 70 + "\n")
+
+    # Optional compilation
+    if args.compile:
+        compile_pdf(out_path)
+
+
+if __name__ == "__main__":
+    main()

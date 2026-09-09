@@ -1,0 +1,142 @@
+\documentclass[letterpaper,12pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx} % Formal, authoritative Times New Roman font (increased by +2 to 12pt)
+% To try Charter font instead: \usepackage{charter}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Margins calibrated for 12pt so everything strictly fits on 1 page
+\addtolength{\oddsidemargin}{-0.6in}
+\addtolength{\evensidemargin}{-0.6in}
+\addtolength{\textwidth}{1.2in}
+\addtolength{\topmargin}{-0.65in}
+\addtolength{\textheight}{1.3in}
+\setlength{\footskip}{4.08pt}
+
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-5pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-4pt}]
+
+\newcommand{\resumeItem}[1]{
+  \item{
+    {#1 \vspace{-2.5pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.98\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{#3} & \textit{#4} \\
+    \end{tabular*}\vspace{-6pt}
+}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-6pt}}
+
+\begin{document}
+
+%----------HEADING----------
+\begin{center}
+    \textbf{\Huge Chinmay Maheshwari} \\ \vspace{2pt}
+    \small Udaipur, India $|$ +91 9460449962 $|$ \href{mailto:chinmaymaheshwari.it27@gmail.com}{\underline{chinmaymaheshwari.it27@gmail.com}} \\ \vspace{1pt}
+    \href{https://linkedin.com/in/chinmay8064/}{\underline{linkedin.com/in/chinmay8064}} $|$ 
+    \href{https://github.com/Chinmay0608}{\underline{github.com/Chinmay0608}} $|$ 
+    \href{https://leetcode.com/u/Chinmay0608/}{\underline{leetcode.com/u/Chinmay0608}} $|$
+    \href{https://portfolio-olive-nine-39.vercel.app}{\underline{Portfolio}}
+\end{center}
+
+%-----------SUMMARY-----------
+\section{Summary}
+Junior Software Engineer (B.Tech, graduating May/June 2027) with hands-on full-stack experience building end-to-end features using React, Node.js, and Java/Spring Boot. Delivered secure REST APIs with JWT RBAC, integrated LLM capabilities via Gemini API, and accelerated development with AI coding assistants (Claude, GitHub Copilot, ChatGPT). Strong problem-solving background (400+ LeetCode problems) and a track record of rapid feature delivery in an internship setting.
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Jaipur Engineering College and Research Centre}{Jaipur, India}
+      {Bachelor of Technology in Information Technology (CGPA: 8.8)}{Expected May/June 2027}
+  \resumeSubHeadingListEnd
+
+%-----------SKILLS-----------
+\section{Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \item{
+     \textbf{Languages}{: JavaScript, Java, Python (basics), SQL, HTML/CSS} \\
+     \textbf{Frameworks \& Libraries}{: React.js, Node.js, Express.js, Spring Boot, Redux, JUnit} \\
+     \textbf{Databases \& Messaging}{: MongoDB, MySQL, Apache Kafka} \\
+     \textbf{Developer Tools \& AI}{: Git, GitHub Actions, Docker, Postman, REST APIs, JWT, Claude, Gemini Flash API, ChatGPT, GitHub Copilot}
+    }
+ \end{itemize}
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Full Stack Developer Intern}{May 2026 -- June 2026}
+      {Yinolite Solution}{Udaipur, India}
+      \resumeItemListStart
+        \resumeItem{Built end-to-end product features by creating secure REST API endpoints (9+) with JWT-based role-based access control for authentication and authorization.}
+        \resumeItem{Designed a three-collection MongoDB schema, added cross-module indexes, and wrote integration/regression tests to ensure reliability before release.}
+        \resumeItem{Accelerated development and debugging using AI coding tools (Claude, ChatGPT), and applied clean-architecture principles to keep frontend and backend concerns separate.}
+      \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeSubheading
+        {\textbf{Skill-Bridge} $|$ \emph{React.js, Node.js, Express.js, MongoDB, JWT, Google OAuth 2.0}}{}
+        {Full-Stack Job Portal Platform}{\href{https://job-portal-system-alpha.vercel.app}{\underline{Live Demo}} $|$ \href{https://github.com/Chinmay0608/job-portal-system}{\underline{GitHub}}}
+        \resumeItemListStart
+          \resumeItem{Implemented a complete user-facing workflow: React UI, Node/Express backend, JWT authentication, and Google OAuth 2.0 for secure sign-in.}
+          \resumeItem{Applied AI-assisted coding (GitHub Copilot, Claude) to scaffold components, generate tests, and produce documentation quickly.}
+          \resumeItem{Enhanced security with rate-limiting, input sanitization, and HTTP-header hardening, and optimized MongoDB queries with indexes for fast lookups.}
+        \resumeItemListEnd
+
+      \resumeSubheading
+        {\textbf{MindVault} $|$ \emph{Java, Spring Boot, Kafka, MongoDB, Gemini API, JUnit}}{}
+        {Distributed Journal Management System}{\href{https://github.com/Chinmay0608/MindVault}{\underline{GitHub}}}
+        \resumeItemListStart
+          \resumeItem{Created a distributed backend using Java 8+ and Spring Boot; integrated Apache Kafka for asynchronous sentiment-analysis pipelines.}
+          \resumeItem{Integrated Google Gemini Flash API to provide LLM-driven sentiment analysis, employing prompt engineering for structured outputs.}
+          \resumeItem{Improved data-retrieval latency by 25\% through MongoDB schema refinement and added comprehensive JUnit test coverage with CI/CD via GitHub Actions.}
+        \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+%-----------ACHIEVEMENTS & CERTIFICATIONS-----------
+\section{Achievements \& Certifications}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \item{
+     \textbf{LeetCode}{: Solved 400+ problems focusing on Data Structures \& Algorithms (Trees, Dynamic Programming, Graphs).} \\
+     \textbf{Java Development Certification}{: Core Java, OOP, Collections Framework, and software design principles (\href{https://drive.google.com/file/d/19W0G-xFzkwkhkULccCE2gLa9lP_WyJ1U/view?usp=drive_link}{\underline{Certificate}}).} \\
+     \textbf{Publication}{: Review paper in \textit{Pratibodh} on `Impact of Technology on Education and Learning'' (\href{https://pratibodh.org/index.php/pratibodh/article/view/345}{\underline{Paper}}).} \\
+     \textbf{Leadership}{: Coordinated the Knowledge Knockout tech fest (2024 \& 2025), managing cross-functional teams and end-to-end event execution.}
+    }
+ \end{itemize}
+
+\end{document}

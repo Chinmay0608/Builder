@@ -1,0 +1,115 @@
+{
+  "name": "Chinmay Maheshwari",
+  "email": "chinmaymaheshwari.it27@gmail.com",
+  "phone": "+91 9460449962",
+  "location": "Udaipur, India",
+  "linkedin": "https://linkedin.com/in/chinmay8064/",
+  "github": "https://github.com/Chinmay0608",
+  "leetcode": "https://leetcode.com/u/Chinmay0608/",
+  "portfolio": "https://portfolio-olive-nine-39.vercel.app",
+  "graduation": "Expected May/June 2027",
+  "degree": "Bachelor of Technology in Information Technology",
+  "college": "Jaipur Engineering College and Research Centre",
+  "college_location": "Jaipur, India",
+  "cgpa": "8.8",
+  "dsa_count": "400+",
+
+  "summary": "Junior Software Engineer (B.Tech, graduating May/June 2027) with hands-on full-stack experience building end-to-end features using React, Node.js, and Java/Spring Boot. Delivered secure REST APIs with JWT RBAC, integrated LLM capabilities via Gemini API, and accelerated development with AI coding assistants (Claude, GitHub Copilot, ChatGPT). Strong problem-solving background (400+ LeetCode problems) and a track record of rapid feature delivery in an internship setting.",
+
+  "core_stack": [
+    "JavaScript", "Java", "Python", "SQL", "HTML/CSS",
+    "React.js", "Node.js", "Express.js", "Spring Boot", "Redux", "JUnit",
+    "MongoDB", "MySQL", "Apache Kafka", "REST APIs", "JWT",
+    "Docker", "GitHub Actions", "Postman", "Git"
+  ],
+
+  "ai_tools": [
+    "Claude", "Claude Code", "ChatGPT", "GitHub Copilot", "Gemini Flash API", "Gemini API", "LLM"
+  ],
+
+  "skills_grouped": {
+    "Languages": "JavaScript, Java, Python (basics), SQL, HTML/CSS",
+    "Frameworks & Libraries": "React.js, Node.js, Express.js, Spring Boot, Redux, JUnit",
+    "Databases & Messaging": "MongoDB, MySQL, Apache Kafka",
+    "Developer Tools & AI": "Git, GitHub Actions, Docker, Postman, REST APIs, JWT, Claude, Gemini Flash API, ChatGPT, GitHub Copilot"
+  },
+
+  "hard_blockers": {
+    "languages_not_known": ["C#", ".NET", "Elixir", "Rust", "Go", "Kotlin", "Swift", "Ruby", "Erlang"],
+    "requires_work_auth": ["UK only", "Australia only", "US only without visa sponsorship", "EU only"],
+    "experience_floor": 2,
+    "domains_to_skip": [
+      "Oracle ERP", "SAP modules", "Salesforce admin",
+      "Data Science", "ML Engineering", "DevOps SRE only",
+      "Embedded systems", "Hardware", "Formal verification",
+      "Compliance analyst", "Customer success manager"
+    ]
+  },
+
+  "green_flags": [
+    "freshers welcome", "0 years experience", "internship counts",
+    "new grad", "recent graduate", "entry level",
+    "India based", "remote worldwide", "visa sponsorship available",
+    "Java", "Spring Boot", "MERN", "React", "Node.js", "full stack",
+    "AI tools", "LLM", "Gemini", "Claude", "GitHub Copilot"
+  ],
+
+  "experience": [
+    {
+      "title": "Full Stack Developer Intern",
+      "company": "Yinolite Solution",
+      "location": "Udaipur, India",
+      "duration": "May 2026 -- June 2026",
+      "bullets": [
+        "Built end-to-end product features by creating secure REST API endpoints (9+) with JWT-based role-based access control for authentication and authorization.",
+        "Designed a three-collection MongoDB schema, added cross-module indexes, and wrote integration/regression tests to ensure reliability before release.",
+        "Accelerated development and debugging using AI coding tools (Claude, ChatGPT), and applied clean-architecture principles to keep frontend and backend concerns separate."
+      ]
+    }
+  ],
+
+  "projects": [
+    {
+      "name": "Skill-Bridge",
+      "tech_header": "React.js, Node.js, Express.js, MongoDB, JWT, Google OAuth 2.0",
+      "subtitle": "Full-Stack Job Portal Platform",
+      "github": "https://github.com/Chinmay0608/job-portal-system",
+      "live": "https://job-portal-system-alpha.vercel.app",
+      "bullets": [
+        "Implemented a complete user-facing workflow: React UI, Node/Express backend, JWT authentication, and Google OAuth 2.0 for secure sign-in.",
+        "Applied AI-assisted coding (GitHub Copilot, Claude) to scaffold components, generate tests, and produce documentation quickly.",
+        "Enhanced security with rate-limiting, input sanitization, and HTTP-header hardening, and optimized MongoDB queries with indexes for fast lookups."
+      ]
+    },
+    {
+      "name": "MindVault",
+      "tech_header": "Java, Spring Boot, Kafka, MongoDB, Gemini API, JUnit",
+      "subtitle": "Distributed Journal Management System",
+      "github": "https://github.com/Chinmay0608/MindVault",
+      "live": null,
+      "bullets": [
+        "Created a distributed backend using Java 8+ and Spring Boot; integrated Apache Kafka for asynchronous sentiment-analysis pipelines.",
+        "Integrated Google Gemini Flash API to provide LLM-driven sentiment analysis, employing prompt engineering for structured outputs.",
+        "Improved data-retrieval latency by 25% through MongoDB schema refinement and added comprehensive JUnit test coverage with CI/CD via GitHub Actions."
+      ]
+    }
+  ],
+
+  "achievements": [
+    "Solved 400+ problems on LeetCode focusing on Data Structures & Algorithms (Trees, Dynamic Programming, Graphs).",
+    "Completed Java Development Certification: Core Java, OOP, Collections Framework, and software design principles.",
+    "Published a review paper in Pratibodh on Impact of Technology on Education and Learning.",
+    "Coordinated the Knowledge Knockout tech fest (2024 & 2025), managing cross-functional teams and end-to-end event execution."
+  ],
+
+  "cert_link": "https://drive.google.com/file/d/19W0G-xFzkwkhkULccCE2gLa9lP_WyJ1U/view?usp=drive_link",
+  "paper_link": "https://pratibodh.org/index.php/pratibodh/article/view/345",
+
+  "resume_versions": {
+    "java_backend": "Use when JD is Java/Spring Boot heavy, backend focus",
+    "full_stack": "Use when JD mentions React + Node.js + full stack",
+    "ai_llm": "Use when JD mentions LLM, AI integration, Gemini, prompt engineering",
+    "security": "Use when JD mentions JWT, RBAC, IAM, security",
+    "general": "Use when JD is generic or stack-agnostic"
+  }
+}
