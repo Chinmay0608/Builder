@@ -145,9 +145,21 @@ def run_setup(existing_config: dict = None) -> dict:
     }
 
     try:
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+        # Write config with restrictive 0600 permissions to protect API key
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        mode = 0o600
+        try:
+            fd = os.open(CONFIG_FILE, flags, mode)
+            with open(fd, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+        except Exception:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            try:
+                os.chmod(CONFIG_FILE, 0o600)
+            except Exception:
+                pass
         print(f"\n[setup] Configuration successfully saved to:\n        {CONFIG_FILE}\n")
     except OSError as e:
         sys.exit(f"[error] Failed to save configuration to '{CONFIG_FILE}': {e}")
@@ -233,6 +245,15 @@ def main():
         "--compile",
         action="store_true",
         help="Force compilation of the tailored LaTeX file to PDF",
+    )
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        help="Display unified diff between original and tailored resume",
+    )
+    parser.add_argument(
+        "--api-base",
+        help="Custom OpenAI-compatible API base URL (e.g. for Ollama or other endpoints)",
     )
 
     args = parser.parse_args()
@@ -346,9 +367,15 @@ def main():
     if api_key:
         cmd.extend(["--api-key", api_key])
 
-    # Pass compile flag if requested via CLI or config
     if args.compile or config.get("auto_compile", False):
         cmd.append("--compile")
+
+    if args.diff:
+        cmd.append("--diff")
+
+    api_base = args.api_base or config.get("api_base") or os.environ.get("GROQ_BASE_URL")
+    if api_base:
+        cmd.extend(["--api-base", api_base])
 
     # 7. Execute resume_tailor.py replacing current process
     try:

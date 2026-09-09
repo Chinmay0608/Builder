@@ -1,57 +1,65 @@
-# Resume Tailor
+# Resume Tailor (Builder)
 
-A fast, lightweight command-line tool that tailors a LaTeX (`.tex`) resume for a specific job posting in **one single command** using the ultra-fast Groq API (`llama-3.3-70b-versatile`). It outputs the tailored LaTeX code directly to the console for quick copy-pasting (e.g. into Overleaf) and saves it to a `.tex` file (with optional automatic PDF compilation).
+A fast, lightweight, zero-dependency command-line tool that tailors a LaTeX (`.tex`) resume for a specific job posting in **one single command** using the ultra-fast Groq API (`llama-3.3-70b-versatile`) or any OpenAI-compatible LLM endpoint.
+
+It outputs the tailored LaTeX code directly to the console for quick copy-pasting (e.g. into Overleaf), prints an instant terminal unified diff (`--diff`), and saves the tailored `.tex` file to disk (with optional multi-engine PDF compilation).
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-- **One-Command Workflow**: Once configured, tailor your resume by running `tailor jd.txt`, `tailor <URL>`, or `cat jd.txt | tailor`.
+- **One-Command Workflow**: Once configured, tailor any resume in seconds: `tailor jd.txt`, `tailor <URL>`, or `cat jd.txt | tailor`.
 - **4 Flexible Ways to Input Job Descriptions**:
-  1. **URL**: Fetch and strip HTML to plaintext automatically with Python standard library.
+  1. **URL**: Fetch and parse HTML to clean plaintext with standard library `urllib` & `html.parser`.
   2. **File**: Pass path to a text file containing the JD.
   3. **Multi-line Paste**: Use `--paste` (or run without arguments) and end input on a line with `END` or `Ctrl+D` (`Ctrl+Z` on Windows).
-  4. **Piped Stdin**: Pipe JD directly from clipboard or file (`cat jd.txt | python tailor.py`, `pbpaste | python tailor.py`, `Get-Content jd.txt | python tailor.py`).
-- **Zero Heavy SDK Dependencies**: Uses pure standard Python (`urllib.request` / `json`) to call Groq's OpenAI-compatible completions endpoint. No `groq` SDK required.
-- **Structure-Preserving AI**: Strictly preserves document classes, geometry, packages, fonts, custom commands, and macros. Only edits content, bullet phrasing, ATS keywords, and skills prioritization.
-- **Truthful & Grounded**: Prevents hallucinations — never invents dates, companies, degrees, or fabricated metrics.
-- **Dual Output**: Prints the full tailored LaTeX directly to stdout (ready for Overleaf) and saves to disk.
-- **Automatic PDF Generation**: Optionally compiles output twice using `pdflatex` for clean references.
+  4. **Piped Stdin**: Pipe JD directly from clipboard or file (`cat jd.txt | tailor`, `pbpaste | tailor`, `Get-Content jd.txt | tailor`).
+- **Zero Heavy SDK Dependencies**: Built with 100% pure Python standard library (`urllib.request`, `json`, `difflib`, `unittest`). No `groq` SDK, no `requests`, no heavy dependencies required.
+- **Built-in Diff View (`--diff`)**: View clean, colored unified diffs of changes made to your resume directly in the terminal before saving.
+- **Resilient API Client**: Automatic retry with exponential backoff for transient network errors and rate limits (`HTTP 429`, `500`, `502`, `503`, `504`).
+- **Provider Agnostic (`--api-base`)**: While optimized for Groq, it supports any OpenAI-compatible API endpoint (Ollama, vLLM, OpenAI, OpenRouter).
+- **Structure-Preserving AI**: Strictly preserves document classes, geometry, packages, fonts, custom commands, and macros. Only enhances bullet point wording, ATS keyword relevance, and skills prioritization.
+- **Truthful & Grounded**: Hardcoded system prompt guarantees the model never hallucinates employers, dates, degrees, or fabricated metrics.
+- **Automatic Multi-Engine PDF Compilation**: Automatically detects `latexmk`, `pdflatex`, or `xelatex` for clean PDF generation.
 
 ---
 
-## 🚀 Quick Start & Setup
+## 🚀 Quick Start & Installation
 
 ### 1. Requirements
-- **Python 3.9+**
-- Optional: `pdflatex` (from TeX Live, MacTeX, or MiKTeX) for automatic PDF compilation.
+- **Python 3.9+** (zero third-party packages required).
 - A **Groq API Key** (free tier available at [console.groq.com](https://console.groq.com/keys)).
+- *(Optional)* A LaTeX distribution (`pdflatex`, `latexmk`, or `xelatex`) if you want automatic local PDF compilation.
 
-### 2. Installation & Setup
-Clone or download this repository:
+### 2. Clone Repository
 ```bash
-git clone https://github.com/your-username/resume-tailor.git
-cd resume-tailor
+git clone https://github.com/Chinmay0608/Builder.git
+cd Builder
 ```
 
-*(Optional)* Install `requests` if using in custom scripts (the tool uses standard library `urllib` by default):
+### 3. Install via pip (Optional)
+You can install the CLI globally or in your virtual environment:
 ```bash
-pip install requests --break-system-packages
+pip install -e .
 ```
+This registers the `tailor` and `resume-tailor` console commands directly on your system `PATH`.
 
+### 4. Configure via Setup Wizard
 Run the one-time interactive setup wizard:
 ```bash
 python tailor.py --setup
+# or if installed via pip:
+tailor --setup
 ```
 
 The wizard prompts for:
-1. **Master `.tex` Resume Path** (e.g. `~/resumes/master.tex`)
+1. **Master `.tex` Resume Path** (e.g. `examples/sample_resume.tex`)
 2. **Groq API Key** (automatically loads from your `.env` file if present)
 3. **Model Name** (default: `llama-3.3-70b-versatile`)
 4. **Output Directory** (default: `./tailored_resumes`)
 5. **Auto Compile to PDF** (`y/N`)
 
-Settings are saved to `~/.resume_tailor/config.json`. Re-run `--setup` anytime to update settings.
+Settings are stored securely at `~/.resume_tailor/config.json` with restrictive `0600` permissions (owner read/write only).
 
 ---
 
@@ -61,7 +69,7 @@ Settings are saved to `~/.resume_tailor/config.json`. Re-run `--setup` anytime t
 ```bash
 python tailor.py "https://boards.greenhouse.io/company/jobs/12345"
 ```
-*Note: The tool strips HTML tags and scripts using standard library `html.parser`. If a site requires heavy JavaScript to render, paste the text manually.*
+*Note: The tool strips HTML tags and scripts using standard library `html.parser`. If a job board requires JavaScript to render, paste the job description text manually.*
 
 ### 2. Job Description from a File
 ```bash
@@ -88,62 +96,32 @@ cat jd.txt | python tailor.py
 Get-Content jd.txt | python tailor.py
 ```
 
-### 5. Specifying Company & Role
-Pass `-c` / `--company` and `-r` / `--role` to customize the output filename (e.g. `master_Google_Senior_SWE.tex`) and give extra context to the AI:
+### 5. Review Changes with Built-in Diff (`--diff`)
 ```bash
-python tailor.py jd.txt -c "Google" -r "Senior Backend Engineer"
+python tailor.py jd.txt --diff
 ```
+Prints an instant colored unified diff showing exactly which bullet points and keywords were tailored.
 
-### 6. Override Master Resume for a Single Run
+### 6. Specifying Company & Role
+Pass `-c` / `--company` and `-r` / `--role` to customize the output filename (e.g. `resume_Google_Senior_SWE.tex`) and give extra context to the AI:
 ```bash
-python tailor.py jd.txt --new-resume path/to/other_resume.tex
+python tailor.py jd.txt -c "Google" -r "Senior Backend Engineer" --diff
 ```
 
 ---
 
-## ⚡ Set Up a Shell Alias (Literally `tailor jd.txt`)
+## 🔧 Standalone Core Engine: `resume_tailor.py`
 
-### Bash / Zsh (`~/.bashrc` or `~/.zshrc`)
-```bash
-alias tailor="python3 /path/to/tailor.py"
-```
-Reload your configuration:
-```bash
-source ~/.bashrc  # or source ~/.zshrc
-```
-Now tailor any resume with:
-```bash
-tailor jd.txt
-cat jd.txt | tailor -c "Stripe" -r "Backend Lead"
-tailor "https://jobs.lever.co/example/123"
-```
-
-### PowerShell (`$PROFILE`)
-Add this function to your PowerShell profile:
-```powershell
-function tailor {
-    python "D:\Resume Builder\tailor.py" @args
-}
-```
-Reload profile:
-```powershell
-. $PROFILE
-```
-
----
-
-## 🔧 Core Engine: `resume_tailor.py`
-
-`resume_tailor.py` is the standalone core engine suitable for direct CLI usage or CI/CD automation:
+`resume_tailor.py` is the canonical engine suitable for direct CLI usage, scripts, or CI/CD pipelines:
 
 ```bash
 python resume_tailor.py \
-  --resume master.tex \
+  --resume examples/sample_resume.tex \
   --job jd.txt \
-  --company "Google" \
-  --role "Senior Software Engineer" \
-  --output tailored_resumes/master_Google_SWE.tex \
-  --model "llama-3.3-70b-versatile" \
+  --company "Stripe" \
+  --role "Software Engineer" \
+  --output tailored_resumes/resume_Stripe_SWE.tex \
+  --diff \
   --compile
 ```
 
@@ -157,22 +135,73 @@ python resume_tailor.py \
 | `--company` | Target company name | `""` |
 | `--role` | Target role/title | `""` |
 | `--output` | Destination `.tex` path | `{resume}_{company}_{role}.tex` |
-| `--model` | Groq model name | `llama-3.3-70b-versatile` |
-| `--compile` | Compile output `.tex` to PDF with `pdflatex` | `False` |
-| `--api-key` | Groq API Key | `GROQ_API_KEY` env var / `.env` |
+| `--model` | Model name | `llama-3.3-70b-versatile` |
+| `--diff` | Display unified diff between original and tailored resume | `False` |
+| `--compile` | Compile output `.tex` to PDF using `latexmk`/`pdflatex`/`xelatex` | `False` |
+| `--api-key` | API Key | `GROQ_API_KEY` env var / `.env` |
+| `--api-base` | Custom OpenAI-compatible base URL | `https://api.groq.com/openai/v1/chat/completions` |
 
 ---
 
-## ⚠️ Important: Reviewing Output Diff
+## 📊 Rate Limits, Token Budgets & Cost
 
-> [!IMPORTANT]
-> **Always inspect the generated LaTeX diff before sending out your application!**
-> 
-> Compare your original resume against the tailored version:
-> ```bash
-> diff -u master.tex tailored_resumes/master_Google_SWE.tex
-> # or with git:
-> git diff --no-index master.tex tailored_resumes/master_Google_SWE.tex
-> ```
-> 
-> While Resume Tailor enforces strict preservation of document macros and formatting, custom resume packages (like `moderncv`, `awesome-cv`, or custom `.cls` files) should always be verified to confirm no custom macro commands were modified.
+- **Groq Free Tier Limits**:
+  - `llama-3.3-70b-versatile`: ~6,000 Tokens Per Minute (TPM) and 30 Requests Per Minute (RPM).
+  - A typical 1-page LaTeX resume + JD prompt consumes ~1,500–2,500 input tokens.
+  - Resume Tailor has built-in retry with exponential backoff on `HTTP 429` rate limits.
+- **Max Output Tokens (`max_tokens: 8192`)**:
+  - The model output buffer is capped at 8,192 tokens, which is more than enough to output a full 1–2 page LaTeX document without truncation.
+- **Cost**:
+  - On Groq's free tier, requests cost **\$0.00**. On paid tiers, a typical resume tailoring call costs less than **\$0.002** (a fraction of a cent).
+- **Tip for Very Long JDs**:
+  - When copying large JDs, trim company perks, boilerplate EEO legal statements, and recruiter bios. Focusing on responsibilities and requirements produces the highest quality ATS match.
+
+---
+
+## 📁 Repository Structure
+
+```text
+Builder/
+├── .env.example                # Example environment file template
+├── .gitignore                  # Strict gitignore protecting .env and output files
+├── LICENSE                     # MIT License
+├── README.md                   # Complete documentation
+├── pyproject.toml              # Packaging configuration & console scripts
+├── resume_tailor.py            # Canonical core engine (API client, LaTeX validation, diff)
+├── tailor.py                   # Lightweight wrapper with setup wizard & config
+├── examples/
+│   └── sample_resume.tex       # Clean, anonymized 1-page sample resume template
+├── tests/
+│   └── test_validation.py      # Unit tests for validation, parsing, and diff functions
+└── job_toolkit/                # Autonomous Job Application Toolkit (Chinmay's workflow)
+    ├── run.py                  # Interactive main menu for evaluation, tailoring & tracking
+    ├── evaluate.py             # 100% local, instant JD qualification evaluator (0 API tokens)
+    ├── tailor.py               # Groq-powered 1-page LaTeX tailor tied to profile.json
+    ├── tracker.py              # CLI application tracker (applications.json)
+    ├── profile.json            # Structured candidate profile & preferences
+    └── requirements.txt        # Optional dependencies for openpyxl / xlsx export
+```
+
+### About `job_toolkit/`
+The `job_toolkit/` folder contains a specialized, automated pipeline tailored for high-volume job applications:
+- **`evaluate.py`**: Instant, rule-based job qualification evaluator (under 1 second, zero API tokens used) that calculates tech stack match %, flags hard blockers, and recommends resume versions.
+- **`tracker.py`**: Local CLI application tracker persisting to `applications.json` with status updates (`Applied`, `Interviewing`, `Offer`, `Rejected`).
+- **`run.py`**: Unified interactive terminal dashboard connecting evaluation, tailoring, and tracking.
+
+---
+
+## 🧪 Running Tests
+
+Resume Tailor includes a unit test suite testing all pure validation functions (`braces_balanced`, `looks_like_latex`, `extract_latex`, `load_job_description`, and `print_diff`):
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+All tests run using Python's standard `unittest` framework with zero external dependencies.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

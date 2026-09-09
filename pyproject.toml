@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resume-tailor"
+version = "0.1.0"
+description = "Fast, lightweight CLI to tailor LaTeX resumes for specific job descriptions using Groq AI"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Chinmay Maheshwari", email = "chinmaymaheshwari.it27@gmail.com" }
+]
+keywords = ["resume", "latex", "groq", "ai", "ats", "job-search"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Chinmay0608/Builder"
+Repository = "https://github.com/Chinmay0608/Builder.git"
+Issues = "https://github.com/Chinmay0608/Builder/issues"
+
+[project.scripts]
+tailor = "tailor:main"
+resume-tailor = "resume_tailor:main"
+
+[tool.setuptools]
+py-modules = ["resume_tailor", "tailor"]

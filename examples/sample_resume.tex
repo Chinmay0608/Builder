@@ -1,0 +1,138 @@
+\documentclass[letterpaper,10pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1.0in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+\setlength{\footskip}{4.08pt}
+
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-3pt}]
+
+\newcommand{\resumeItem}[1]{
+  \item{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-1pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{#3} & \textit{#4} \\
+    \end{tabular*}\vspace{-6pt}
+}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+\begin{document}
+
+%----------HEADING----------
+\begin{center}
+    \textbf{\Huge Alex Doe} \\ \vspace{3pt}
+    \small San Francisco, CA $|$ +1 (555) 019-2834 $|$ \href{mailto:alex.doe@example.com}{\underline{alex.doe@example.com}} \\ \vspace{1pt}
+    \href{https://linkedin.com/in/example}{\underline{linkedin.com/in/example}} $|$ 
+    \href{https://github.com/example}{\underline{github.com/example}} $|$ 
+    \href{https://portfolio.example.com}{\underline{portfolio.example.com}}
+\end{center}
+
+%-----------SUMMARY-----------
+\section{Summary}
+Software Engineer with hands-on experience designing and deploying scalable backend services, RESTful APIs, and responsive web applications. Proficient in Python, Java, TypeScript, and modern cloud deployment pipelines. Passionate about system performance, clean architecture, and rapid prototyping with AI-accelerated workflows.
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {State University}{San Francisco, CA}
+      {Bachelor of Science in Computer Science (GPA: 3.8 / 4.0)}{Graduation: May 2025}
+  \resumeSubHeadingListEnd
+
+%-----------SKILLS-----------
+\section{Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \item{
+     \textbf{Languages}{: Python, Java, JavaScript, TypeScript, Go, SQL, HTML/CSS} \\
+     \textbf{Frameworks \& Libraries}{: FastAPI, Django, Spring Boot, React, Node.js, Express, PyTorch} \\
+     \textbf{Databases \& Messaging}{: PostgreSQL, MongoDB, Redis, Apache Kafka, RabbitMQ} \\
+     \textbf{DevOps \& Cloud}{: Docker, Kubernetes, AWS (EC2, S3, RDS), GitHub Actions, Terraform, Linux}
+    }
+ \end{itemize}
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Software Engineer Intern}{June 2024 -- August 2024}
+      {TechCorp Solutions}{San Francisco, CA}
+      \resumeItemListStart
+        \resumeItem{Engineered high-throughput REST APIs using Python (FastAPI) and PostgreSQL, handling over 2M requests daily with sub-50ms latency.}
+        \resumeItem{Integrated Redis caching layers for frequently queried user endpoints, reducing database CPU load by 35\%.}
+        \resumeItem{Built automated CI/CD deployment pipelines using GitHub Actions and Docker, reducing deployment turnaround times by 40\%.}
+      \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeSubheading
+        {\textbf{CloudTask} $|$ \emph{React, Node.js, PostgreSQL, Docker, AWS}}{}
+        {Distributed Task Management Platform}{\href{https://github.com/example/cloudtask}{\underline{GitHub}}}
+        \resumeItemListStart
+          \resumeItem{Architected a real-time collaborative task manager supporting WebSockets, JWT session authentication, and role-based access control.}
+          \resumeItem{Containerized application services using Docker and configured Nginx reverse proxies with automated SSL renewal.}
+          \resumeItem{Designed database normalization schemas and added composite indexing to optimize query execution times by 50\%.}
+        \resumeItemListEnd
+
+      \resumeSubheading
+        {\textbf{PulseAI} $|$ \emph{Python, PyTorch, FastAPI, Streamlit}}{}
+        {Semantic Search \& Summarization Engine}{\href{https://github.com/example/pulseai}{\underline{GitHub}}}
+        \resumeItemListStart
+          \resumeItem{Developed an end-to-end document question-answering pipeline using embedding similarity matching and LLM generation.}
+          \resumeItem{Implemented asynchronous request batching in FastAPI, increasing concurrent query handling by 3x.}
+        \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+%-----------ACHIEVEMENTS & CERTIFICATIONS-----------
+\section{Achievements \& Certifications}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \item{
+     \textbf{AWS Certified Cloud Practitioner}{: Amazon Web Services, 2024.} \\
+     \textbf{Competitive Programming}{: Solved 350+ algorithmic problems across LeetCode and Codeforces.} \\
+     \textbf{Hackathon Winner}{: 1st Place at State Hackathon 2023 for building an automated disaster relief coordination tool.}
+    }
+ \end{itemize}
+
+\end{document}

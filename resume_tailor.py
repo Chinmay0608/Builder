@@ -10,15 +10,18 @@ Usage:
 """
 
 import argparse
+import difflib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from html.parser import HTMLParser
+from typing import Optional
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
@@ -96,7 +99,17 @@ def fetch_job_from_url(url: str) -> str:
     """
     Fetches web content from the given URL and strips HTML to plain text.
     Warns if content seems suspiciously short (e.g. JS-rendered SPA).
+
+    SECURITY NOTE (SSRF):
+    In this standalone CLI tool, URLs are directly provided by the local user.
+    If this functionality is ever integrated into a hosted multi-tenant web service,
+    an allow-list or private IP filter MUST be enforced to prevent Server-Side Request
+    Forgery (e.g. blocking 127.0.0.1, 169.254.169.254, RFC1918 subnets, and non-standard ports).
     """
+    clean_url = url.strip()
+    if not clean_url.lower().startswith(("http://", "https://")):
+        raise ValueError(f"Invalid URL '{url}'. URL must begin with http:// or https://")
+
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -105,12 +118,12 @@ def fetch_job_from_url(url: str) -> str:
         ),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
-    req = urllib.request.Request(url, headers=headers)
+    req = urllib.request.Request(clean_url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=25) as resp:
             raw_html = resp.read().decode("utf-8", errors="ignore")
     except urllib.error.URLError as e:
-        raise RuntimeError(f"Failed to fetch job URL '{url}': {e}") from e
+        raise RuntimeError(f"Failed to fetch job URL '{clean_url}': {e}") from e
 
     parser = _HTMLTextExtractor()
     parser.feed(raw_html)
@@ -152,10 +165,15 @@ def load_job_description(args: argparse.Namespace) -> str:
 # Groq API Client (Urllib / Standard Library)
 # --------------------------------------------------------------------------
 
-def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str) -> str:
+def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str, api_base: Optional[str] = None) -> str:
     """
-    Calls the Groq chat completions API using urllib.request.
+    Calls the Groq chat completions API (or any OpenAI-compatible endpoint) using urllib.request.
+    Includes automatic retry with exponential backoff for transient network issues and rate limits (429).
     """
+    endpoint = api_base or os.environ.get("GROQ_BASE_URL") or GROQ_API_URL
+    if not endpoint.endswith("/chat/completions") and not endpoint.endswith("/"):
+        endpoint = f"{endpoint}/chat/completions"
+
     payload = {
         "model": model,
         "messages": [
@@ -167,7 +185,7 @@ def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str) ->
     }
     json_data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        GROQ_API_URL,
+        endpoint,
         data=json_data,
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -177,20 +195,45 @@ def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str) ->
         method="POST",
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            response_body = resp.read().decode("utf-8")
-            response_json = json.loads(response_body)
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Groq API error (HTTP {e.code}): {err_body}") from e
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Groq network connection error: {e}") from e
+    max_retries = 3
+    base_delay = 2.0
+    last_error = None
 
-    try:
-        return response_json["choices"][0]["message"]["content"]
-    except (KeyError, IndexError) as e:
-        raise RuntimeError(f"Unexpected response format from Groq API: {response_body}") from e
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                response_body = resp.read().decode("utf-8")
+                try:
+                    response_json = json.loads(response_body)
+                except json.JSONDecodeError as e:
+                    raise RuntimeError(f"Failed to parse API response as JSON: {e}\nRaw output:\n{response_body[:500]}") from e
+
+                try:
+                    return response_json["choices"][0]["message"]["content"]
+                except (KeyError, IndexError) as e:
+                    raise RuntimeError(f"Unexpected response format from API: {response_body}") from e
+
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            last_error = f"API error (HTTP {e.code}): {err_body}"
+            # Retry on rate limits (429) or transient server errors (500, 502, 503, 504)
+            if e.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                sleep_time = base_delay * (2 ** (attempt - 1))
+                print(f"[retry] API returned HTTP {e.code}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_time)
+                continue
+            raise RuntimeError(last_error) from e
+
+        except urllib.error.URLError as e:
+            last_error = f"Network connection error: {e}"
+            if attempt < max_retries:
+                sleep_time = base_delay * (2 ** (attempt - 1))
+                print(f"[retry] Network error: {e.reason}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_time)
+                continue
+            raise RuntimeError(last_error) from e
+
+    raise RuntimeError(f"All {max_retries} API call attempts failed. Last error: {last_error}")
 
 
 # --------------------------------------------------------------------------
@@ -291,17 +334,60 @@ Return ONLY the full updated LaTeX source code, starting from \\documentclass (o
 
 
 # --------------------------------------------------------------------------
+# Diff View
+# --------------------------------------------------------------------------
+
+def print_diff(original_tex: str, tailored_tex: str, original_name: str = "original.tex", tailored_name: str = "tailored.tex") -> None:
+    """
+    Prints a clean unified diff between the original and tailored LaTeX text.
+    """
+    diff = difflib.unified_diff(
+        original_tex.splitlines(keepends=True),
+        tailored_tex.splitlines(keepends=True),
+        fromfile=original_name,
+        tofile=tailored_name,
+    )
+    diff_lines = list(diff)
+    if not diff_lines:
+        print("\n[diff] No textual changes detected between original and tailored resume.\n")
+        return
+
+    print("\n" + "=" * 70)
+    print("UNIFIED DIFF (Changes Made to Resume):")
+    print("=" * 70)
+    use_color = sys.stdout.isatty()
+    for line in diff_lines:
+        line_str = line.rstrip("\n")
+        if line_str.startswith("+++") or line_str.startswith("---"):
+            print(f"\033[1m{line_str}\033[0m" if use_color else line_str)
+        elif line_str.startswith("+"):
+            print(f"\033[32m{line_str}\033[0m" if use_color else line_str)
+        elif line_str.startswith("-"):
+            print(f"\033[31m{line_str}\033[0m" if use_color else line_str)
+        elif line_str.startswith("@@"):
+            print(f"\033[36m{line_str}\033[0m" if use_color else line_str)
+        else:
+            print(line_str)
+    print("=" * 70 + "\n")
+
+
+# --------------------------------------------------------------------------
 # PDF Compilation
 # --------------------------------------------------------------------------
 
 def compile_pdf(tex_path: str) -> bool:
     """
-    Compiles the LaTeX file to PDF by running pdflatex twice.
-    Gracefully warns if pdflatex is not found on PATH.
+    Compiles the LaTeX file to PDF. Detects available engine (latexmk, pdflatex, xelatex).
     """
-    if not shutil.which("pdflatex"):
+    compiler = None
+    for candidate in ("latexmk", "pdflatex", "xelatex"):
+        if shutil.which(candidate):
+            compiler = candidate
+            break
+
+    if not compiler:
         print(
-            "[warn] 'pdflatex' was not found on PATH — skipping PDF compilation.\n"
+            "[warn] No LaTeX compiler found on PATH (checked latexmk, pdflatex, xelatex).\n"
             "       Install TeX Live, MacTeX, or MiKTeX if you want automatic PDF builds.",
             file=sys.stderr,
         )
@@ -312,31 +398,41 @@ def compile_pdf(tex_path: str) -> bool:
     base_name = os.path.splitext(os.path.basename(abs_tex))[0]
     pdf_path = os.path.join(work_dir, f"{base_name}.pdf")
 
-    print("[compile] Running pdflatex (pass 1/2)...")
-    res1 = subprocess.run(
-        ["pdflatex", "-interaction=nonstopmode", "-output-directory", work_dir, abs_tex],
-        capture_output=True,
-        text=True,
-    )
+    print(f"[compile] Compiling PDF using '{compiler}'...")
 
-    print("[compile] Running pdflatex (pass 2/2)...")
-    res2 = subprocess.run(
-        ["pdflatex", "-interaction=nonstopmode", "-output-directory", work_dir, abs_tex],
-        capture_output=True,
-        text=True,
-    )
+    if compiler == "latexmk":
+        res = subprocess.run(
+            ["latexmk", "-pdf", "-interaction=nonstopmode", f"-output-directory={work_dir}", abs_tex],
+            capture_output=True,
+            text=True,
+        )
+        success = os.path.isfile(pdf_path)
+        last_out = res.stdout
+    else:
+        # pdflatex or xelatex: run twice for cross-references
+        print(f"[compile] Running {compiler} (pass 1/2)...")
+        subprocess.run(
+            [compiler, "-interaction=nonstopmode", "-output-directory", work_dir, abs_tex],
+            capture_output=True,
+            text=True,
+        )
+        print(f"[compile] Running {compiler} (pass 2/2)...")
+        res2 = subprocess.run(
+            [compiler, "-interaction=nonstopmode", "-output-directory", work_dir, abs_tex],
+            capture_output=True,
+            text=True,
+        )
+        success = os.path.isfile(pdf_path)
+        last_out = res2.stdout
 
-    if os.path.isfile(pdf_path) and res2.returncode == 0:
+    if success:
         print(f"[compile] PDF successfully generated: {pdf_path}")
-        return True
-    elif os.path.isfile(pdf_path):
-        print(f"[compile] PDF generated with warnings: {pdf_path}")
         return True
     else:
         print("[compile] [error] PDF compilation failed.", file=sys.stderr)
-        log_snippet = (res2.stdout or res1.stdout or "")[-2000:]
+        log_snippet = (last_out or "")[-2000:]
         if log_snippet:
-            print(f"----- pdflatex output (tail) -----\n{log_snippet}", file=sys.stderr)
+            print(f"----- {compiler} output (tail) -----\n{log_snippet}", file=sys.stderr)
         return False
 
 
@@ -385,12 +481,22 @@ def main():
     parser.add_argument(
         "--compile",
         action="store_true",
-        help="Compile output .tex to PDF using pdflatex",
+        help="Compile output .tex to PDF using latexmk, pdflatex, or xelatex",
+    )
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        help="Display a unified diff between original and tailored resume",
     )
     parser.add_argument(
         "--api-key",
         default=os.environ.get("GROQ_API_KEY"),
-        help="Groq API key (defaults to GROQ_API_KEY environment variable)",
+        help="API key (defaults to GROQ_API_KEY environment variable)",
+    )
+    parser.add_argument(
+        "--api-base",
+        default=os.environ.get("GROQ_BASE_URL"),
+        help="API base URL (defaults to GROQ_BASE_URL or https://api.groq.com/openai/v1/chat/completions)",
     )
 
     args = parser.parse_args()
@@ -398,7 +504,7 @@ def main():
     # Validate API key
     api_key = args.api_key or os.environ.get("GROQ_API_KEY")
     if not api_key:
-        sys.exit("[error] No Groq API key provided. Set GROQ_API_KEY environment variable or pass --api-key.")
+        sys.exit("[error] No API key provided. Set GROQ_API_KEY environment variable or pass --api-key.")
 
     # Validate resume file
     if not os.path.isfile(args.resume):
@@ -421,12 +527,12 @@ def main():
         sys.exit("[error] Job description is empty or too short (< 30 characters).")
 
     # [2/4] Call Groq API
-    print(f"[2/4] Sending to Groq ({args.model}) for tailoring...")
+    print(f"[2/4] Sending to AI model ({args.model}) for tailoring...")
     user_prompt = build_user_prompt(resume_tex, job_description, args.company, args.role)
     try:
-        raw_output = call_groq(SYSTEM_PROMPT, user_prompt, args.model, api_key)
+        raw_output = call_groq(SYSTEM_PROMPT, user_prompt, args.model, api_key, args.api_base)
     except Exception as e:
-        sys.exit(f"[error] Groq API call failed: {e}")
+        sys.exit(f"[error] API call failed: {e}")
 
     # [3/4] Validate LaTeX output
     print("[3/4] Validating LaTeX output...")
@@ -471,6 +577,10 @@ def main():
 
     # [4/4] Output saved
     print(f"[4/4] Successfully saved tailored resume to: {out_path}\n")
+
+    # Optional diff view
+    if args.diff:
+        print_diff(resume_tex, tailored_tex, args.resume, out_path)
 
     # Always output the tailored LaTeX code to stdout for easy copy-pasting (e.g. Overleaf)
     print("=" * 70)
