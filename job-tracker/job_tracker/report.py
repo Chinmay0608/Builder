@@ -19,7 +19,7 @@ _STATUS_ORDER = [
     "offer", "interview_invited", "assessment_invited",
     "shortlisted", "rejected", "no_response",
 ]
-_CSV_COLS = ["company", "role", "date_applied", "status", "last_updated", "source_email_id"]
+_CSV_COLS = ["company", "role", "date_applied", "status", "last_updated", "account", "source_email_id"]
 
 
 def write_csv(applications: list[dict[str, Any]], since: str, until: str) -> pathlib.Path:
@@ -64,7 +64,9 @@ def print_summary(applications: list[dict[str, Any]]) -> None:
             role     = app.get("role")     or "Unknown role"
             date     = app.get("date_applied") or "?"
             updated  = app.get("last_updated")  or ""
-            _safe_print(f"  {date}  {company:<28}  {role}")
+            account = app.get("account", "")
+            acc_tag = f" ({account.split('@')[0]})" if account else ""
+            _safe_print(f"  {date}  {company:<28}  {role}{acc_tag}")
             if updated and updated != date:
                 _safe_print(f"               last update: {updated}")
         _safe_print()
@@ -113,7 +115,7 @@ _HTML = """\
 <p class="meta">Generated: {generated} | Period: {since} &#8594; {until} | Total: {total}</p>
 <div class="cards">{cards}</div>
 <table>
-<thead><tr><th>Date Applied</th><th>Company</th><th>Role</th><th>Status</th><th>Last Updated</th></tr></thead>
+<thead><tr><th>Date Applied</th><th>Company</th><th>Role</th><th>Status</th><th>Last Updated</th><th>Account</th></tr></thead>
 <tbody>{rows}</tbody>
 </table>
 </body>
@@ -121,7 +123,7 @@ _HTML = """\
 
 _CARD = '<div class="card"><div class="card-n">{n}</div><div class="card-l">{l}</div></div>'
 _ROW  = ('<tr><td>{d}</td><td>{c}</td><td>{r}</td>'
-         '<td><span class="badge {s}">{sl}</span></td><td>{u}</td></tr>')
+         '<td><span class="badge {s}">{sl}</span></td><td>{u}</td><td><small>{a}</small></td></tr>')
 
 
 def write_html(applications: list[dict[str, Any]], since: str, until: str) -> pathlib.Path:
@@ -144,6 +146,7 @@ def write_html(applications: list[dict[str, Any]], since: str, until: str) -> pa
             s=app.get("status", "no_response"),
             sl=html.escape(status_label(app.get("status", "no_response"))),
             u=html.escape(app.get("last_updated", "")),
+            a=html.escape(app.get("account", "")),
         )
         for app in sorted(applications, key=lambda x: x.get("date_applied",""), reverse=True)
     )

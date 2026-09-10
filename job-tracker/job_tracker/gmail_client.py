@@ -219,6 +219,8 @@ def _fetch_messages(mail: imaplib.IMAP4_SSL, uids: list[str], chunk_size: int = 
                     msg_uid = m.group(1) if m else chunk[0]
                     raw_bytes = item[1]
                     messages.append(_parse_raw_message(msg_uid, raw_bytes))
+            if len(uids) > chunk_size:
+                print(f"      [fetch] {min(i + chunk_size, len(uids))}/{len(uids)} downloaded...", flush=True)
         except Exception:
             # Fallback to single-UID fetch if batch fails
             for uid in chunk:
@@ -247,7 +249,7 @@ def fetch_emails(
     if use_cache:
         cached = _load_cache(cache_label)
         if cached is not None:
-            print(f"    [cache] {len(cached)} messages loaded")
+            print(f"    [cache] {len(cached)} messages loaded", flush=True)
             return cached
 
     all_messages: list[dict] = []
@@ -257,7 +259,7 @@ def fetch_emails(
         uids = _search_folder(mail, folder, criteria)
         if not uids:
             continue
-        print(f"    [imap]  {folder}: {len(uids)} match(es)")
+        print(f"    [imap]  {folder}: {len(uids)} match(es)", flush=True)
         msgs = _fetch_messages(mail, uids)
         for m in msgs:
             msg_id = m.get("id") or m.get("subject", "")
@@ -281,12 +283,14 @@ RESPONSE_FOLDERS = [
     "INBOX",
 ]
 
-def fetch_application_emails(mail, since_iso: str, use_cache: bool = True) -> list[dict]:
+def fetch_application_emails(mail, since_iso: str, account: str = "", use_cache: bool = True) -> list[dict]:
     criteria = build_application_query(since_iso)
+    slug = re.sub(r"[^a-zA-Z0-9]", "_", account) if account else "default"
     return fetch_emails(mail, criteria, APPLICATION_FOLDERS,
-                        cache_label=f"app_{since_iso}", use_cache=use_cache)
+                        cache_label=f"app_{slug}_{since_iso}", use_cache=use_cache)
 
-def fetch_response_emails(mail, since_iso: str, use_cache: bool = True) -> list[dict]:
+def fetch_response_emails(mail, since_iso: str, account: str = "", use_cache: bool = True) -> list[dict]:
     criteria = build_response_query(since_iso)
+    slug = re.sub(r"[^a-zA-Z0-9]", "_", account) if account else "default"
     return fetch_emails(mail, criteria, RESPONSE_FOLDERS,
-                        cache_label=f"resp_{since_iso}", use_cache=use_cache)
+                        cache_label=f"resp_{slug}_{since_iso}", use_cache=use_cache)

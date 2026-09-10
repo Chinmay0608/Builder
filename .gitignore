@@ -13,6 +13,8 @@ __pycache__/
 # Generated resume outputs
 job_toolkit/output/*.tex
 !job_toolkit/output/.gitkeep
+cache/
+output/
 
 # System files
 .DS_Store
