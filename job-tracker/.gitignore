@@ -1,0 +1,28 @@
+# OAuth tokens and credentials — NEVER commit these
+credentials.json
+token.json
+~/.job_tracker/
+
+# Cache and output
+cache/
+output/
+
+# Environment variables
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,34 @@
+# companies.yaml
+# User-editable list of known ATS domains and company portal patterns.
+# The job-tracker tool uses this to improve company name extraction from sender addresses.
+# Add entries for companies you frequently apply to.
+#
+# Format:
+#   domain: "Company Name"
+#   (use empty string "" to auto-extract from subdomain, e.g. "acme.greenhouse.io" -> "Acme")
+
+ats_domains:
+  greenhouse.io:       ""         # auto-extract from subdomain
+  lever.co:            ""
+  workday.com:         ""
+  myworkday.com:       ""
+  icims.com:           ""
+  smartrecruiters.com: ""
+  joinsuperset.com:    "Superset"
+  jobvite.com:         ""
+  taleo.net:           ""
+  bamboohr.com:        ""
+  ashbyhq.com:         ""
+  rippling.com:        ""
+  keka.com:            ""
+  darwinbox.com:       ""
+  zohorecruit.com:     ""
+
+# Known placement / ATS portals specific to your college
+college_portals:
+  - "joinsuperset.com"
+  - "unstop.com"
+  - "naukri.com"
+
+# Response signal keywords (you can add domain-specific keywords here)
+extra_response_keywords: []
