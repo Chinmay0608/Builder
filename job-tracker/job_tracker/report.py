@@ -9,6 +9,7 @@ import csv
 import datetime
 import html
 import pathlib
+import sys
 from typing import Any
 
 from .classify import status_label, STATUS_EMOJI, STATUS_LABELS
@@ -30,42 +31,52 @@ def write_csv(applications: list[dict[str, Any]], since: str, until: str) -> pat
     return path
 
 
+def _safe_print(text: str = "") -> None:
+    """Print text safely, replacing unencodable characters for current terminal."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "ascii"
+        print(text.encode(encoding, errors="replace").decode(encoding))
+
+
 def print_summary(applications: list[dict[str, Any]]) -> None:
     if not applications:
-        print("No applications found."); return
+        _safe_print("No applications found.")
+        return
 
     by_status: dict[str, list] = {s: [] for s in _STATUS_ORDER}
     for app in applications:
         by_status.setdefault(app.get("status", "no_response"), []).append(app)
 
-    print(f"\n{'='*62}")
-    print(f"  JOB APPLICATION TRACKER  --  {len(applications)} application(s) found")
-    print(f"{'='*62}\n")
+    _safe_print(f"\n{'='*62}")
+    _safe_print(f"  JOB APPLICATION TRACKER  --  {len(applications)} application(s) found")
+    _safe_print(f"{'='*62}\n")
 
     for status in _STATUS_ORDER:
         items = by_status.get(status, [])
         if not items:
             continue
-        print(f"{status_label(status)}  ({len(items)})")
-        print("-" * 50)
+        _safe_print(f"{status_label(status)}  ({len(items)})")
+        _safe_print("-" * 50)
         for app in sorted(items, key=lambda x: x.get("date_applied", ""), reverse=True):
             company  = app.get("company")  or "Unknown"
             role     = app.get("role")     or "Unknown role"
             date     = app.get("date_applied") or "?"
             updated  = app.get("last_updated")  or ""
-            print(f"  {date}  {company:<28}  {role}")
+            _safe_print(f"  {date}  {company:<28}  {role}")
             if updated and updated != date:
-                print(f"               last update: {updated}")
-        print()
+                _safe_print(f"               last update: {updated}")
+        _safe_print()
 
-    print(f"{'='*62}")
-    print("  Status breakdown:")
+    _safe_print(f"{'='*62}")
+    _safe_print("  Status breakdown:")
     for status in _STATUS_ORDER:
         count = len(by_status.get(status, []))
         if count:
-            bar = chr(0x2588) * min(count, 25)
-            print(f"  {status_label(status):<30} {bar} {count}")
-    print(f"{'='*62}\n")
+            bar = "#" * min(count, 25)
+            _safe_print(f"  {status_label(status):<30} {bar} {count}")
+    _safe_print(f"{'='*62}\n")
 
 
 # ── HTML report ───────────────────────────────────────────────────────────────

@@ -1,71 +1,73 @@
 """
-OAuth2 authentication for Gmail API.
+IMAP authentication for Gmail.
 
-First run:  opens a browser for consent, caches token at ~/.job_tracker/token.json
-Subsequent: loads cached token, refreshes silently if expired.
+Reads EMAIL_USERNAME and EMAIL_PASSWORD from environment / .env file.
+EMAIL_PASSWORD should be a Google App Password (not your real Gmail password).
 
-Setup steps (one-time):
-  1. Go to https://console.cloud.google.com/
-  2. Create / select a project.
-  3. Enable "Gmail API"  (APIs & Services -> Library).
-  4. APIs & Services -> Credentials -> Create Credentials -> OAuth client ID
-       Application type: Desktop app
-       Download the JSON -> save as credentials.json in this directory
-       (or pass its path with --credentials).
-  5. OAuth consent screen -> add your Gmail address as a Test User.
+How to create a Google App Password:
+  1. Go to https://myaccount.google.com/security
+  2. Under "How you sign in to Google" -> enable 2-Step Verification (if not already)
+  3. Search "App passwords" in the search bar at the top
+  4. App name: "job-tracker"  -> click Create
+  5. Copy the 16-character password (spaces don't matter)
+  6. Add to your .env:
+       EMAIL_USERNAME=you@gmail.com
+       EMAIL_PASSWORD=xxxx xxxx xxxx xxxx
 """
 
 from __future__ import annotations
+import imaplib
 import os
 import pathlib
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-
-_TOKEN_DIR  = pathlib.Path.home() / ".job_tracker"
-_TOKEN_PATH = _TOKEN_DIR / "token.json"
+_GMAIL_IMAP_HOST = "imap.gmail.com"
+_GMAIL_IMAP_PORT = 993
 
 
-def get_credentials(credentials_path: str | pathlib.Path = "credentials.json") -> Credentials:
+def _load_dotenv() -> None:
+    """Load .env from CWD or any parent directory (no external deps)."""
+    for directory in [pathlib.Path.cwd(), *pathlib.Path.cwd().parents]:
+        env_file = directory / ".env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, val = line.partition("=")
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+            break
+
+
+def get_imap_connection() -> imaplib.IMAP4_SSL:
     """
-    Return valid Gmail OAuth2 credentials.
-    Loads from cache if available; triggers browser consent flow otherwise.
-    Token is persisted to ~/.job_tracker/token.json (mode 0600).
+    Return an authenticated IMAP4_SSL connection to Gmail.
+    Reads EMAIL_USERNAME and EMAIL_PASSWORD from the environment.
     """
-    credentials_path = pathlib.Path(credentials_path)
-    if not credentials_path.exists():
-        raise FileNotFoundError(
-            f"credentials.json not found at {str(credentials_path)!r}.\n"
-            "Follow the setup steps in auth.py to create one via Google Cloud Console."
+    _load_dotenv()
+
+    username = os.environ.get("EMAIL_USERNAME", "").strip()
+    password = os.environ.get("EMAIL_PASSWORD", "").replace(" ", "").strip()
+
+    if not username:
+        raise ValueError(
+            "EMAIL_USERNAME not set. Add it to your .env file:\n"
+            "  EMAIL_USERNAME=you@gmail.com"
+        )
+    if not password:
+        raise ValueError(
+            "EMAIL_PASSWORD not set. Add your Google App Password to .env:\n"
+            "  EMAIL_PASSWORD=xxxx xxxx xxxx xxxx"
         )
 
-    creds: Credentials | None = None
-    if _TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(_TOKEN_PATH), SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
-            creds = flow.run_local_server(port=0)
-
-        _TOKEN_DIR.mkdir(parents=True, exist_ok=True)
-        token_data = creds.to_json()
-        fd = os.open(str(_TOKEN_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, token_data.encode())
-        finally:
-            os.close(fd)
-
-    return creds
+    mail = imaplib.IMAP4_SSL(_GMAIL_IMAP_HOST, _GMAIL_IMAP_PORT)
+    mail.login(username, password)
+    return mail
 
 
-def build_gmail_service(credentials_path: str | pathlib.Path = "credentials.json"):
-    """Return an authorised Gmail API service object."""
-    creds = get_credentials(credentials_path)
-    return build("gmail", "v1", credentials=creds, cache_discovery=False)
+def get_username() -> str:
+    """Return the Gmail username from environment."""
+    _load_dotenv()
+    return os.environ.get("EMAIL_USERNAME", "").strip()

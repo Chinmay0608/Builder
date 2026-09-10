@@ -1,11 +1,11 @@
-# Core Gmail API dependencies
-google-api-python-client>=2.100.0
-google-auth>=2.23.0
-google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.1.1
+# All Gmail access is via stdlib imaplib -- no Google API libraries needed.
 
 # YAML parsing for companies.yaml
 pyyaml>=6.0
 
 # Dev / test
 pytest>=7.0
+
+# Optional: Groq LLM fallback for company/role extraction
+# Install only if you want the LLM fallback (GROQ_API_KEY must be set in .env)
+# groq>=0.9.0   # not required -- we call the API directly via urllib
