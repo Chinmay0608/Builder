@@ -180,8 +180,8 @@ def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str, ap
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.3,
-        "max_tokens": 8192,
+        "temperature": 0.2,
+        "max_tokens": 6000,
     }
     json_data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -283,25 +283,110 @@ def looks_like_latex(tex: str) -> bool:
     return has_doc_class or has_begin_doc or has_section
 
 
+def validate_output(tailored_tex: str, master_tex: str) -> bool:
+    """
+    Validates that personal details, candidate facts, and structural formatting
+    from the master resume are strictly preserved in the tailored output.
+    """
+    errors = []
+
+    # Check personal details preserved
+    if "Chinmay Maheshwari" in master_tex and "Chinmay Maheshwari" not in tailored_tex:
+        errors.append("Name was changed")
+    if "9460449962" in master_tex and "9460449962" not in tailored_tex:
+        errors.append("Phone was changed")
+    if "chinmaymaheshwari.it27@gmail.com" in master_tex and "chinmaymaheshwari.it27@gmail.com" not in tailored_tex:
+        errors.append("Email was changed")
+
+    # Check accuracy rules
+    if "research paper" in tailored_tex.lower():
+        errors.append("Says 'research paper' instead of 'review paper'")
+    if "Professional Java" in tailored_tex:
+        errors.append("Says 'Professional Java Development Certification'")
+    if "500+" in tailored_tex or "300+" in tailored_tex:
+        errors.append("Wrong LeetCode count")
+    if "May 2026 -- Present" in tailored_tex or "May 2026 – Present" in tailored_tex or "May 2026 - Present" in tailored_tex:
+        errors.append("Internship marked as ongoing")
+
+    # Check structure preserved
+    if "\\begin{itemize}" in master_tex and "\\begin{itemize}" not in tailored_tex:
+        errors.append("itemize environment removed")
+    if ">{\\bfseries}l" in master_tex and ">{\\bfseries}l" not in tailored_tex:
+        errors.append("Skills tabular format broken")
+
+    if errors:
+        print("\n[VALIDATION WARNINGS]", file=sys.stderr)
+        for e in errors:
+            print(f"  ⚠️  {e}", file=sys.stderr)
+        print("Review the output carefully before using.\n", file=sys.stderr)
+
+    return len(errors) == 0
+
+
 # --------------------------------------------------------------------------
 # System & User Prompts
 # --------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an elite executive resume writer and ATS (Applicant Tracking System) optimization specialist who edits LaTeX resumes.
+SYSTEM_PROMPT = """You are an expert resume writer who tailors LaTeX resumes for specific job descriptions.
+You receive a master LaTeX resume and a job description. Your job is to tailor the resume
+content while preserving ALL LaTeX formatting exactly.
 
-STRICT RULES:
-1. Output ONLY complete, compilable LaTeX source code. No explanations, no markdown fences, no conversational commentary before or after.
-2. NEVER change the document structure: documentclass, packages, geometry, fonts, custom commands/macros, environments, or formatting/styling commands. Preserve them EXACTLY as given.
-3. ONLY modify the actual resume CONTENT:
-   - Bullet point wording and action verbs (make them impactful, metrics-driven, and aligned with the target role).
-   - Summary / Objective / Profile section text.
-   - Ordering and prioritization of bullets within a job/section (put the most relevant accomplishments first).
-   - Ordering and grouping of skills in Skills / Technical Skills sections (put high-priority matching skills first).
-4. NEVER invent employers, job titles, employment dates, degrees, certifications, or fabricated metrics/claims that are not in the original resume.
-5. Weave in important keywords, tools, frameworks, and domain phrasing from the job description wherever they truthfully reflect or match the candidate's existing experience, for maximum ATS score.
-6. Keep the resume to roughly the same length as the original (do not cause extra page overflow).
-7. Ensure all LaTeX braces, escapes (e.g. \\%, \\&, \\$), and syntax remain 100% valid so the document compiles without errors.
-8. If there is a Skills or Technical Skills section, reorder the items so the most relevant ones appear first without deleting any truthful entries.
+═══════════════════════════════════════════════════════════
+ABSOLUTE RULES — NEVER VIOLATE ANY OF THESE
+═══════════════════════════════════════════════════════════
+
+STRUCTURE PRESERVATION:
+- Output ONLY the complete LaTeX source, no explanations, no markdown fences
+- Never change \\documentclass, \\usepackage, or geometry settings
+- Never change \\begin{itemize} / \\item to em-dashes or any other format
+- Never modify \\vspace, \\hspace, or spacing commands
+- Never change tabular structure in the skills section
+- Never modify \\textbf, \\hfill, or alignment commands
+- Never change \\begin{rSection} names or formatting
+- The output must compile without errors in the same LaTeX environment as the input
+
+PERSONAL DETAILS — NEVER CHANGE:
+- Name, phone, email, LinkedIn, GitHub, LeetCode URLs
+- All \\href{} certificate and paper URLs
+- CGPA: 8.8, Graduation: 2023-2027
+
+CANDIDATE FACTS — NEVER CONTRADICT:
+- Internship: May 2026 – June 2026 (completed)
+- LeetCode: exactly "400+"
+- Publication: "review paper" NOT "research paper"
+- Certification: "Java Development Certification" only
+- Python: "(basics)" only
+- Graduation: May/June 2027
+
+PAGE LENGTH:
+- Output must fit exactly ONE page
+- Summary: maximum 3 lines
+- Experience: maximum 3 bullets per role, 2 lines each
+- Projects: maximum 2 bullets per project, 2 lines each
+- Achievements: maximum 4 items, 1 line each
+
+CONTENT ACCURACY:
+- Never invent metrics not in the master resume
+- Never add technologies not in the master resume
+- Never fabricate employers, dates, or achievements
+- Rephrase bullets using JD keywords only where truthfully applicable
+
+═══════════════════════════════════════════════════════════
+WHAT YOU MAY CHANGE
+═══════════════════════════════════════════════════════════
+
+1. SUMMARY — Rewrite to mirror JD language, max 3 lines, specific to role
+2. SKILLS — Reorder rows to put most JD-relevant skills first, keep same format
+3. BULLET POINTS — Rephrase using JD keywords where truthful, keep \\item format
+4. PROJECT ORDER — Lead with the project most relevant to the JD
+5. SKILLS VALUES — Add JD-relevant skills that exist in the master resume
+
+═══════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════
+
+Return ONLY the complete LaTeX code starting from \\documentclass to \\end{document}.
+No explanations. No markdown. No commentary. Just the LaTeX.
 """
 
 
@@ -552,6 +637,9 @@ def main():
             "Writing file, but please review the LaTeX syntax carefully.",
             file=sys.stderr,
         )
+
+    # Validate candidate facts and structural preservation
+    validate_output(tailored_tex, resume_tex)
 
     # Determine output file path
     if args.output:

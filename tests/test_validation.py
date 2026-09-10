@@ -17,6 +17,7 @@ from resume_tailor import (
     looks_like_latex,
     load_job_description,
     print_diff,
+    validate_output,
 )
 
 
@@ -132,6 +133,63 @@ class TestPrintDiff(unittest.TestCase):
         self.assertIn("UNIFIED DIFF", output)
         self.assertIn("-old line", output)
         self.assertIn("+new line", output)
+
+
+class TestValidateOutput(unittest.TestCase):
+    def setUp(self):
+        self.master_sample = (
+            "\\documentclass{resume}\n"
+            "\\name{Chinmay Maheshwari}\n"
+            "\\address{+91 9460449962 \\\\ chinmaymaheshwari.it27@gmail.com}\n"
+            "\\begin{tabular}{ @{} >{\\bfseries}l @{\\hspace{2ex}} l }\n"
+            "Languages :& Java, SQL \\\\\n"
+            "\\end{tabular}\n"
+            "\\begin{itemize}\n"
+            "  \\item Solved 400+ problems on LeetCode.\n"
+            "  \\item Review paper published.\n"
+            "  \\item Java Development Certification.\n"
+            "  \\item Full Stack Intern May 2026 -- June 2026.\n"
+            "\\end{itemize}\n"
+        )
+
+    def test_valid_output_passes(self):
+        self.assertTrue(validate_output(self.master_sample, self.master_sample))
+
+    def test_name_changed_fails(self):
+        tampered = self.master_sample.replace("Chinmay Maheshwari", "John Doe")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_phone_changed_fails(self):
+        tampered = self.master_sample.replace("9460449962", "1234567890")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_email_changed_fails(self):
+        tampered = self.master_sample.replace("chinmaymaheshwari.it27@gmail.com", "other@gmail.com")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_research_paper_instead_of_review_paper_fails(self):
+        tampered = self.master_sample.replace("Review paper", "Research paper")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_professional_java_fails(self):
+        tampered = self.master_sample.replace("Java Development Certification", "Professional Java Development Certification")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_wrong_leetcode_count_fails(self):
+        tampered = self.master_sample.replace("400+", "500+")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_ongoing_internship_fails(self):
+        tampered = self.master_sample.replace("May 2026 -- June 2026", "May 2026 -- Present")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_broken_itemize_fails(self):
+        tampered = self.master_sample.replace("\\begin{itemize}", "-- bullet points")
+        self.assertFalse(validate_output(tampered, self.master_sample))
+
+    def test_broken_skills_tabular_fails(self):
+        tampered = self.master_sample.replace(">{\\bfseries}l", "ll")
+        self.assertFalse(validate_output(tampered, self.master_sample))
 
 
 if __name__ == "__main__":
