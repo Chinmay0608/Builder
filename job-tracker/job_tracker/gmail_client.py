@@ -25,14 +25,10 @@ _CACHE_DIR = pathlib.Path("cache")
 # ── Application signal patterns (IMAP SEARCH format) ─────────────────────────
 
 APPLICATION_SUBJECT_KEYWORDS = [
-    "application submitted",
-    "application received",
-    "thank you for applying",
-    "thanks for applying",
-    "we received your application",
-    "your application has been received",
-    "application confirmation",
-    "successfully applied",
+    "application",
+    "applied",
+    "applying",
+    "candidacy",
 ]
 
 APPLICATION_ATS_DOMAINS = [
@@ -40,7 +36,8 @@ APPLICATION_ATS_DOMAINS = [
     "icims.com", "smartrecruiters.com", "joinsuperset.com", "jobvite.com",
     "taleo.net", "successfactors.com", "brassring.com", "bamboohr.com",
     "recruitee.com", "ashbyhq.com", "rippling.com", "keka.com",
-    "darwinbox.com", "zohorecruit.com",
+    "darwinbox.com", "zohorecruit.com", "mercor.com", "wellfound.com",
+    "eightfold.ai", "micro1.ai",
 ]
 
 RESPONSE_KEYWORDS = [
@@ -56,6 +53,10 @@ RESPONSE_KEYWORDS = [
     "not selected",
     "pleased to inform",
     "next steps",
+    "coding challenge",
+    "hackerrank",
+    "codesignal",
+    "codility",
 ]
 
 

@@ -139,15 +139,39 @@ def fetch_job_from_url(url: str) -> str:
     return text
 
 
+def read_multiline_paste() -> str:
+    """
+    Reads multi-line text interactively from the terminal.
+    Terminates when the user enters 'END' on its own line,
+    or triggers EOF (Ctrl+Z + Enter on Windows, Ctrl+D on Unix).
+    """
+    print("\n" + "=" * 60)
+    print(" Paste the Job Description below.")
+    print(" When finished, type 'END' on a new line and press Enter:")
+    print(" (or press Ctrl+Z then Enter on Windows / Ctrl+D on Unix)")
+    print("=" * 60, flush=True)
+    lines = []
+    try:
+        while True:
+            line = input()
+            if line.strip() == "END":
+                break
+            lines.append(line)
+    except EOFError:
+        pass
+    text = "\n".join(lines).strip()
+    return text
+
+
 def load_job_description(args: argparse.Namespace) -> str:
     """
     Loads the job description from --job-url, a file path passed to --job,
-    or raw text passed to --job.
+    raw text passed to --job, or interactive terminal paste (--paste).
     """
-    if args.job_url:
+    if getattr(args, "job_url", None):
         return fetch_job_from_url(args.job_url)
 
-    if args.job:
+    if getattr(args, "job", None):
         # Check if the argument is an existing file path
         if os.path.isfile(args.job):
             try:
@@ -158,7 +182,10 @@ def load_job_description(args: argparse.Namespace) -> str:
         # Otherwise treat as raw text
         return args.job
 
-    raise ValueError("Provide --job (file path or text) or --job-url.")
+    if getattr(args, "paste", False):
+        return read_multiline_paste()
+
+    raise ValueError("Provide --job (file path or text), --job-url, or --paste.")
 
 
 # --------------------------------------------------------------------------
@@ -531,10 +558,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Resume Tailor — Tailor a LaTeX resume for a specific job posting using Groq AI."
     )
+    default_resume = "master_resume.tex" if os.path.isfile("master_resume.tex") else None
     parser.add_argument(
         "--resume",
-        required=True,
-        help="Path to your master .tex resume file",
+        default=default_resume,
+        required=(default_resume is None),
+        help=f"Path to your master .tex resume file (default: {default_resume})" if default_resume else "Path to your master .tex resume file",
     )
     parser.add_argument(
         "--job",
@@ -543,6 +572,11 @@ def main():
     parser.add_argument(
         "--job-url",
         help="URL of the job posting to fetch and parse",
+    )
+    parser.add_argument(
+        "--paste",
+        action="store_true",
+        help="Paste the job description directly into the terminal",
     )
     parser.add_argument(
         "--company",
@@ -585,6 +619,17 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Automatically activate paste mode if no job input was supplied
+    if not args.job and not args.job_url and not args.paste:
+        if sys.stdin.isatty():
+            args.paste = True
+        else:
+            piped_input = sys.stdin.read().strip()
+            if piped_input:
+                args.job = piped_input
+            else:
+                args.paste = True
 
     # Validate API key
     api_key = args.api_key or os.environ.get("GROQ_API_KEY")

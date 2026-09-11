@@ -266,11 +266,19 @@ def main():
         run_setup(config)
         return
 
-    # If no config exists, run wizard automatically on first run
+    # If no config exists, auto-detect master_resume.tex or run wizard
     if not config:
-        print("[info] No config found at ~/.resume_tailor/config.json.")
-        print("[info] Starting first-time setup wizard...\n")
-        config = run_setup()
+        if os.path.isfile("master_resume.tex") and os.environ.get("GROQ_API_KEY"):
+            config = {
+                "resume_path": os.path.abspath("master_resume.tex"),
+                "model": DEFAULT_MODEL,
+                "output_dir": "./tailored_resumes",
+                "auto_compile": False,
+            }
+        else:
+            print("[info] No config found at ~/.resume_tailor/config.json.")
+            print("[info] Starting first-time setup wizard...\n")
+            config = run_setup()
 
     # 1. Determine master resume path
     resume_path = args.new_resume or config.get("resume_path")

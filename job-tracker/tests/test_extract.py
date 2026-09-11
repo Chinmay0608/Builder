@@ -71,6 +71,72 @@ class TestExtractRuleBased(unittest.TestCase):
         info = extract_rule_based(APPLIED_GENERIC_SUBJECT)
         self.assertIn("Razorpay", info["company"])
 
+    def test_superset_submitted(self):
+        msg = {
+            "subject": "Application submitted: Auro Group’s Software Development Engineer",
+            "sender": "Superset <notifications@joinsuperset.com>",
+            "date": "2025-08-01",
+        }
+        info = extract_rule_based(msg)
+        self.assertEqual(info["company"], "Auro Group")
+        self.assertEqual(info["role"], "Software Development Engineer")
+
+    def test_superset_by_college(self):
+        msg = {
+            "subject": "Application submitted by college for: TCS's Trainee Engineer",
+            "sender": "Superset <notifications@joinsuperset.com>",
+            "date": "2025-07-15",
+        }
+        info = extract_rule_based(msg)
+        self.assertEqual(info["company"], "TCS")
+        self.assertEqual(info["role"], "Trainee Engineer")
+
+    def test_indeed_apply(self):
+        msg = {
+            "subject": "Indeed Application: Junior Backend Developer",
+            "sender": "Indeed Apply <indeedapply@indeed.com>",
+            "date": "2025-05-24",
+        }
+        info = extract_rule_based(msg)
+        self.assertEqual(info["company"], "Indeed Apply")
+        self.assertEqual(info["role"], "Junior Backend Developer")
+
+    def test_uipath_application(self):
+        msg = {
+            "subject": "Thank you for your application to UiPath: Software Engineer 1",
+            "sender": "UiPath Talent Acquisition <careers@uipath.com>",
+            "date": "2025-06-01",
+        }
+        info = extract_rule_based(msg)
+        self.assertEqual(info["company"], "UiPath")
+        self.assertEqual(info["role"], "Software Engineer 1")
+
+
+class TestNoiseFilter(unittest.TestCase):
+    def test_linkedin_alert_is_noise(self):
+        from job_tracker.extract import is_noise_email
+        msg = {
+            "sender": "LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>",
+            "subject": "“app developer”: Jobactive NSW - Software and Application Programmer",
+        }
+        self.assertTrue(is_noise_email(msg))
+
+    def test_github_oauth_is_noise(self):
+        from job_tracker.extract import is_noise_email
+        msg = {
+            "sender": "GitHub <noreply@github.com>",
+            "subject": "[GitHub] A third-party OAuth application has been added to your account",
+        }
+        self.assertTrue(is_noise_email(msg))
+
+    def test_real_application_not_noise(self):
+        from job_tracker.extract import is_noise_email
+        msg = {
+            "sender": "noreply@mail.amazon.jobs",
+            "subject": "Thank you for Applying to Amazon!",
+        }
+        self.assertFalse(is_noise_email(msg))
+
 
 if __name__ == "__main__":
     unittest.main()

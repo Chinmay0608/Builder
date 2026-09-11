@@ -24,7 +24,7 @@ import sys
 
 from .auth import get_accounts, get_imap_connection
 from .gmail_client import fetch_application_emails, fetch_response_emails
-from .extract import extract_info, _parse_date
+from .extract import extract_info, _parse_date, is_noise_email
 from .classify import classify_response
 from .report import print_summary, write_csv, write_html
 
@@ -33,21 +33,26 @@ _STATUS_RANK = {
     "shortlisted": 2, "rejected": 1, "no_response": 0,
 }
 
-_PROMOTIONAL_PATTERNS = [
-    "dare2compete.news", "unstop.events", "unstop.email", "emails.unstop.com",
-    "newsletters-noreply@linkedin.com", "jobalerts-noreply@linkedin.com",
-    "digest-novalue@linkedin.com", "internshala.com", "naukri.com/alert",
-]
-
 
 def build_application_records(emails: list[dict], use_llm: bool, account_name: str = "") -> dict[tuple, dict]:
     records: dict[tuple, dict] = {}
     for msg in emails:
+        if is_noise_email(msg):
+            continue
         info = extract_info(msg, use_llm=use_llm)
         company = info.get("company", "").strip()
         role    = info.get("role", "").strip()
         date    = info.get("date_applied", "")
-        key = (company.lower(), role.lower()) if (company or role) else (msg["id"],)
+
+        co_low = company.lower() if company else "unknown"
+        ro_low = role.lower()
+        if ro_low:
+            key = (co_low, ro_low)
+        elif date:
+            key = (co_low, date)
+        else:
+            key = (co_low, msg["id"])
+
         if key not in records:
             records[key] = {
                 "company":         company,
@@ -58,20 +63,29 @@ def build_application_records(emails: list[dict], use_llm: bool, account_name: s
                 "account":         msg.get("account") or account_name,
                 "source_email_id": msg["id"],
             }
+        else:
+            existing = records[key]
+            if not existing.get("role") and role:
+                existing["role"] = role
+            if not existing.get("date_applied") and date:
+                existing["date_applied"] = date
+                existing["last_updated"] = date
+            if account_name and account_name not in existing.get("account", ""):
+                existing["account"] = f"{existing.get('account', '')}, {account_name}".strip(", ")
     return records
 
 
 def apply_responses(records: dict, response_emails: list[dict], account_name: str = "") -> None:
     record_list = list(records.values())
     for msg in response_emails:
-        sender = msg.get("sender", "").lower()
-        if any(pat in sender for pat in _PROMOTIONAL_PATTERNS):
+        if is_noise_email(msg):
             continue
 
         status = classify_response(msg)
         if status == "no_response":
             continue
 
+        sender = msg.get("sender", "").lower()
         m = re.search(r"@([a-z0-9\-]+)\.", sender, re.IGNORECASE)
         sender_domain = m.group(1).lower() if m else ""
         subject_lower = msg.get("subject", "").lower()
@@ -81,7 +95,7 @@ def apply_responses(records: dict, response_emails: list[dict], account_name: st
             company_lower = rec.get("company", "").lower()
             if company_lower and (
                 company_lower in sender_domain
-                or sender_domain in company_lower
+                or (len(sender_domain) > 3 and sender_domain in company_lower)
                 or company_lower in subject_lower
             ):
                 if _STATUS_RANK.get(status, 0) > _STATUS_RANK.get(rec["status"], 0):
@@ -94,9 +108,12 @@ def apply_responses(records: dict, response_emails: list[dict], account_name: st
 
         if not matched:
             info = extract_info(msg, use_llm=False)
+            company = info.get("company", "").strip()
+            if not company or company.lower() in {"unknown", "email", "gmail", "mail"}:
+                continue
             date_str = _parse_date(msg.get("date", ""))
             new_rec = {
-                "company":         info.get("company", ""),
+                "company":         company,
                 "role":            info.get("role", ""),
                 "date_applied":    "",
                 "status":          status,
@@ -219,6 +236,8 @@ def main() -> None:
                 # Keep earlier application date
                 if not existing.get("date_applied") and v.get("date_applied"):
                     existing["date_applied"] = v["date_applied"]
+                if not existing.get("role") and v.get("role"):
+                    existing["role"] = v["role"]
                 # Append account
                 if username not in existing.get("account", ""):
                     existing["account"] = f"{existing.get('account', '')}, {username}".strip(", ")
