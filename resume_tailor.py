@@ -59,6 +59,60 @@ def load_dotenv_if_present():
                 pass
 
 
+def get_groq_api_keys() -> list[str]:
+    """
+    Collect all unique Groq API keys configured across .env and environment variables.
+    Supports:
+      GROQ_API_KEY=...
+      GROQ_API_KEY_2=...
+      GROQ_API_KEY_3=...
+      GROQ_API_KEYS=key1,key2
+    """
+    load_dotenv_if_present()
+    keys: list[str] = []
+
+    # 1. Inspect environment variables
+    for k, v in os.environ.items():
+        if k == "GROQ_API_KEY" or k.startswith("GROQ_API_KEY_") or k == "GROQ_API_KEYS":
+            for part in v.replace(";", ",").split(","):
+                clean = part.strip().strip("'\"")
+                if clean and clean not in keys:
+                    keys.append(clean)
+
+    # 2. Sequential scan in .env files to preserve declaration order
+    candidates = [
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.expanduser("~/.resume_tailor/.env"),
+    ]
+    file_keys: list[str] = []
+    for env_path in candidates:
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, val = line.split("=", 1)
+                            k = k.strip()
+                            if k == "GROQ_API_KEY" or k.startswith("GROQ_API_KEY_") or k == "GROQ_API_KEYS":
+                                for part in val.replace(";", ",").split(","):
+                                    clean = part.strip().strip("'\"")
+                                    if clean and clean not in file_keys:
+                                        file_keys.append(clean)
+            except Exception:
+                pass
+            if file_keys:
+                break
+
+    all_keys: list[str] = []
+    for k in file_keys + keys:
+        if k not in all_keys:
+            all_keys.append(k)
+
+    return all_keys
+
+
 # --------------------------------------------------------------------------
 # HTML-to-Plaintext Parser (Standard Library only)
 # --------------------------------------------------------------------------
@@ -193,88 +247,133 @@ def load_job_description(args: argparse.Namespace) -> str:
 # Groq API Client (Urllib / Standard Library)
 # --------------------------------------------------------------------------
 
-def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str, api_base: Optional[str] = None) -> str:
+def call_groq(
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+    api_key: str | list[str] | None = None,
+    api_base: Optional[str] = None
+) -> str:
     """
-    Calls the Groq chat completions API (or any OpenAI-compatible endpoint) using urllib.request.
-    Includes automatic retry with exponential backoff for transient network issues and rate limits (429),
-    and model fallback if a model is unavailable (404).
+    Calls the Groq chat completions API with smart key shifting and model fallback.
+    - If a key hits rate limit (429), quota exceeded, or auth error (401/403), it automatically
+      shifts to the next available API key immediately.
+    - If a model returns 404 (model_not_found), it tries the next fallback model.
     """
     endpoint = api_base or os.environ.get("GROQ_BASE_URL") or GROQ_API_URL
     if not endpoint.endswith("/chat/completions") and not endpoint.endswith("/"):
         endpoint = f"{endpoint}/chat/completions"
 
+    # Normalize key pool
+    if isinstance(api_key, list):
+        keys_pool = [k for k in api_key if k]
+    elif isinstance(api_key, str) and api_key.strip():
+        keys_pool = [api_key.strip()]
+    else:
+        keys_pool = get_groq_api_keys()
+
+    if not keys_pool:
+        raise ValueError("No Groq API keys found. Set GROQ_API_KEY in .env or pass --api-key.")
+
     models_to_try = [model] + [m for m in FALLBACK_MODELS if m != model]
     last_error = None
 
     for curr_model in models_to_try:
-        payload = {
-            "model": curr_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.2,
-            "max_tokens": 6000,
-        }
-        json_data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            endpoint,
-            data=json_data,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            },
-            method="POST",
-        )
-
-        max_retries = 3
-        base_delay = 2.0
         model_failed = False
 
-        for attempt in range(1, max_retries + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                    response_body = resp.read().decode("utf-8")
-                    try:
-                        response_json = json.loads(response_body)
-                    except json.JSONDecodeError as e:
-                        raise RuntimeError(f"Failed to parse API response as JSON: {e}\nRaw output:\n{response_body[:500]}") from e
+        for k_idx, curr_key in enumerate(keys_pool, 1):
+            key_preview = f"...{curr_key[-6:]}" if len(curr_key) > 8 else curr_key
+            payload = {
+                "model": curr_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.2,
+                "max_tokens": 6000,
+            }
+            json_data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                endpoint,
+                data=json_data,
+                headers={
+                    "Authorization": f"Bearer {curr_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                },
+                method="POST",
+            )
 
-                    try:
-                        return response_json["choices"][0]["message"]["content"]
-                    except (KeyError, IndexError) as e:
-                        raise RuntimeError(f"Unexpected response format from API: {response_body}") from e
+            max_retries = 2
+            base_delay = 1.5
 
-            except urllib.error.HTTPError as e:
-                err_body = e.read().decode("utf-8", errors="ignore")
-                last_error = f"API error (HTTP {e.code}): {err_body}"
-                # If model not found (404), break to try next fallback model
-                if e.code == 404 and "model_not_found" in err_body:
-                    print(f"[warn] Model '{curr_model}' not found. Trying fallback model...", file=sys.stderr)
-                    model_failed = True
-                    break
-                # Retry on rate limits (429) or transient server errors (500, 502, 503, 504)
-                if e.code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                    sleep_time = base_delay * (2 ** (attempt - 1))
-                    print(f"[retry] API returned HTTP {e.code}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
-                    time.sleep(sleep_time)
-                    continue
-                raise RuntimeError(last_error) from e
+            for attempt in range(1, max_retries + 1):
+                try:
+                    with urllib.request.urlopen(req, timeout=120) as resp:
+                        response_body = resp.read().decode("utf-8")
+                        try:
+                            response_json = json.loads(response_body)
+                        except json.JSONDecodeError as e:
+                            raise RuntimeError(f"Failed to parse API response as JSON: {e}\nRaw output:\n{response_body[:500]}") from e
 
-            except urllib.error.URLError as e:
-                last_error = f"Network connection error: {e}"
-                if attempt < max_retries:
-                    sleep_time = base_delay * (2 ** (attempt - 1))
-                    print(f"[retry] Network error: {e.reason}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
-                    time.sleep(sleep_time)
-                    continue
-                raise RuntimeError(last_error) from e
+                        try:
+                            return response_json["choices"][0]["message"]["content"]
+                        except (KeyError, IndexError) as e:
+                            raise RuntimeError(f"Unexpected response format from API: {response_body}") from e
 
-        if not model_failed:
-            break
+                except urllib.error.HTTPError as e:
+                    err_body = e.read().decode("utf-8", errors="ignore")
+                    last_error = f"API error (HTTP {e.code}): {err_body}"
 
-    raise RuntimeError(f"All API call attempts failed. Last error: {last_error}")
+                    # 1. Model not found -> break to try next model
+                    if e.code == 404 and "model_not_found" in err_body:
+                        print(f"[warn] Model '{curr_model}' not found. Trying fallback model...", file=sys.stderr)
+                        model_failed = True
+                        break
+
+                    # 2. Rate limit (429) or Quota or Auth error (401/403) -> SMART SHIFT TO NEXT KEY
+                    if e.code in (429, 401, 402) or "rate_limit" in err_body.lower() or "quota" in err_body.lower():
+                        if len(keys_pool) > 1 and k_idx < len(keys_pool):
+                            next_key_preview = f"...{keys_pool[k_idx][-6:]}" if len(keys_pool[k_idx]) > 8 else "Key"
+                            print(
+                                f"[smart-shift] Key {k_idx}/{len(keys_pool)} ({key_preview}) hit HTTP {e.code}. "
+                                f"Smart shifting to Key {k_idx + 1}/{len(keys_pool)} ({next_key_preview})...",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                            # Immediately break out to try next key in pool
+                            break
+
+                    # 3. Transient server errors (500, 502, 503, 504) -> retry with backoff
+                    if e.code in (500, 502, 503, 504) and attempt < max_retries:
+                        sleep_time = base_delay * (2 ** (attempt - 1))
+                        print(f"[retry] API returned HTTP {e.code}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
+                        time.sleep(sleep_time)
+                        continue
+
+                    # If not retryable and more keys exist, try next key
+                    if len(keys_pool) > 1 and k_idx < len(keys_pool):
+                        print(f"[smart-shift] Key {k_idx} encountered error. Shifting to next key...", file=sys.stderr)
+                        break
+
+                except urllib.error.URLError as e:
+                    last_error = f"Network connection error: {e}"
+                    if attempt < max_retries:
+                        sleep_time = base_delay * (2 ** (attempt - 1))
+                        print(f"[retry] Network error: {e.reason}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
+                        time.sleep(sleep_time)
+                        continue
+
+            if model_failed:
+                break
+
+        if model_failed:
+            continue
+
+        # If we reached here without returning, all keys failed on curr_model
+        print(f"[warn] All {len(keys_pool)} key(s) failed for model '{curr_model}'. Trying next fallback model...", file=sys.stderr)
+
+    raise RuntimeError(f"All API calls across {len(keys_pool)} key(s) and all models failed. Last error: {last_error}")
 
 
 # --------------------------------------------------------------------------
@@ -645,10 +744,15 @@ def main():
             else:
                 args.paste = True
 
-    # Validate API key
-    api_key = args.api_key or os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        sys.exit("[error] No API key provided. Set GROQ_API_KEY environment variable or pass --api-key.")
+    # Validate API keys with smart shifting support
+    keys = get_groq_api_keys()
+    if args.api_key:
+        if args.api_key in keys:
+            keys.remove(args.api_key)
+        keys.insert(0, args.api_key)
+
+    if not keys:
+        sys.exit("[error] No API key provided. Set GROQ_API_KEY in .env or pass --api-key.")
 
     # Validate resume file
     if not os.path.isfile(args.resume):
@@ -670,11 +774,12 @@ def main():
     if not job_description or len(job_description.strip()) < 30:
         sys.exit("[error] Job description is empty or too short (< 30 characters).")
 
-    # [2/4] Call Groq API
-    print(f"[2/4] Sending to AI model ({args.model}) for tailoring...")
+    # [2/4] Call Groq API with Smart Shifting
+    shift_info = f" [smart shifting active across {len(keys)} keys]" if len(keys) > 1 else ""
+    print(f"[2/4] Sending to AI model ({args.model}) for tailoring{shift_info}...")
     user_prompt = build_user_prompt(resume_tex, job_description, args.company, args.role)
     try:
-        raw_output = call_groq(SYSTEM_PROMPT, user_prompt, args.model, api_key, args.api_base)
+        raw_output = call_groq(SYSTEM_PROMPT, user_prompt, args.model, keys, args.api_base)
     except Exception as e:
         sys.exit(f"[error] API call failed: {e}")
 

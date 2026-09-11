@@ -352,7 +352,7 @@ def extract_rule_based(msg: dict) -> dict:
 # ── Groq LLM fallback ─────────────────────────────────────────────────────────
 
 _GROQ_URL    = "https://api.groq.com/openai/v1/chat/completions"
-_GROQ_MODELS = ["qwen/qwen3.8-27b", "qwen/qwen3.6-27b"]
+_GROQ_MODELS = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "qwen/qwen3.6-27b"]
 
 _SYSTEM_PROMPT = (
     "You are a precise information extractor. Given an email subject, sender, and snippet, "
@@ -362,11 +362,26 @@ _SYSTEM_PROMPT = (
     'Use empty string "" for unknown fields. No markdown, no explanation.'
 )
 
+_ACTIVE_KEY_INDEX = 0
+
+
+def _get_groq_api_keys() -> list[str]:
+    """Discover all Groq API keys configured in .env or environment variables."""
+    _load_dotenv()
+    keys: list[str] = []
+    for k, v in os.environ.items():
+        if k == "GROQ_API_KEY" or k.startswith("GROQ_API_KEY_") or k == "GROQ_API_KEYS":
+            for part in v.replace(";", ",").split(","):
+                clean = part.strip().strip("'\"")
+                if clean and clean not in keys:
+                    keys.append(clean)
+    return keys
+
 
 def _call_groq(subject: str, sender: str, snippet: str, body: str = "") -> dict:
-    _load_dotenv()
-    api_key = os.environ.get("GROQ_API_KEY", "")
-    if not api_key:
+    global _ACTIVE_KEY_INDEX
+    keys_pool = _get_groq_api_keys()
+    if not keys_pool:
         return {}
 
     context = (snippet or body)[:600]
@@ -383,33 +398,43 @@ def _call_groq(subject: str, sender: str, snippet: str, body: str = "") -> dict:
             "max_tokens": 100,
         }).encode()
 
-        req = urllib.request.Request(
-            _GROQ_URL,
-            data=payload,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            },
-        )
+        num_keys = len(keys_pool)
+        for offset in range(num_keys):
+            k_idx = (_ACTIVE_KEY_INDEX + offset) % num_keys
+            curr_key = keys_pool[k_idx]
 
-        for attempt in range(2):
-            try:
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    resp_data = json.loads(resp.read().decode("utf-8"))
-                    text = resp_data["choices"][0]["message"]["content"].strip()
-                    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)
-                    parsed = json.loads(text)
-                    if isinstance(parsed, dict):
-                        return parsed
-            except urllib.error.HTTPError as e:
-                if e.code in (429, 500, 502, 503) and attempt < 1:
-                    time.sleep(1.0)
-                else:
+            req = urllib.request.Request(
+                _GROQ_URL,
+                data=payload,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {curr_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                },
+            )
+
+            for attempt in range(2):
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        resp_data = json.loads(resp.read().decode("utf-8"))
+                        text = resp_data["choices"][0]["message"]["content"].strip()
+                        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)
+                        parsed = json.loads(text)
+                        if isinstance(parsed, dict):
+                            _ACTIVE_KEY_INDEX = k_idx
+                            return parsed
+                except urllib.error.HTTPError as e:
+                    # Smart shift to next key on rate limit (429) or quota / auth error
+                    if e.code in (429, 401, 402):
+                        _ACTIVE_KEY_INDEX = (k_idx + 1) % num_keys
+                        break
+                    if e.code in (500, 502, 503, 504) and attempt < 1:
+                        time.sleep(1.0)
+                    else:
+                        break
+                except Exception:
                     break
-            except Exception:
-                break
     return {}
 
 

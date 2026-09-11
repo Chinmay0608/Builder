@@ -268,7 +268,11 @@ def main():
 
     # If no config exists, auto-detect master_resume.tex or run wizard
     if not config:
-        if os.path.isfile("master_resume.tex") and os.environ.get("GROQ_API_KEY"):
+        has_any_key = any(
+            (k == "GROQ_API_KEY" or k.startswith("GROQ_API_KEY_") or k == "GROQ_API_KEYS") and v.strip()
+            for k, v in os.environ.items()
+        )
+        if os.path.isfile("master_resume.tex") and has_any_key:
             config = {
                 "resume_path": os.path.abspath("master_resume.tex"),
                 "model": DEFAULT_MODEL,
@@ -371,7 +375,7 @@ def main():
     if role:
         cmd.extend(["--role", role])
 
-    api_key = config.get("api_key") or os.environ.get("GROQ_API_KEY")
+    api_key = config.get("api_key")
     if api_key:
         cmd.extend(["--api-key", api_key])
 
