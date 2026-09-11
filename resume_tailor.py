@@ -24,7 +24,8 @@ from html.parser import HTMLParser
 from typing import Optional
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
+FALLBACK_MODELS = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
 
 
 # --------------------------------------------------------------------------
@@ -195,72 +196,85 @@ def load_job_description(args: argparse.Namespace) -> str:
 def call_groq(system_prompt: str, user_prompt: str, model: str, api_key: str, api_base: Optional[str] = None) -> str:
     """
     Calls the Groq chat completions API (or any OpenAI-compatible endpoint) using urllib.request.
-    Includes automatic retry with exponential backoff for transient network issues and rate limits (429).
+    Includes automatic retry with exponential backoff for transient network issues and rate limits (429),
+    and model fallback if a model is unavailable (404).
     """
     endpoint = api_base or os.environ.get("GROQ_BASE_URL") or GROQ_API_URL
     if not endpoint.endswith("/chat/completions") and not endpoint.endswith("/"):
         endpoint = f"{endpoint}/chat/completions"
 
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.2,
-        "max_tokens": 6000,
-    }
-    json_data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        endpoint,
-        data=json_data,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "ResumeTailor/1.0",
-        },
-        method="POST",
-    )
-
-    max_retries = 3
-    base_delay = 2.0
+    models_to_try = [model] + [m for m in FALLBACK_MODELS if m != model]
     last_error = None
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                response_body = resp.read().decode("utf-8")
-                try:
-                    response_json = json.loads(response_body)
-                except json.JSONDecodeError as e:
-                    raise RuntimeError(f"Failed to parse API response as JSON: {e}\nRaw output:\n{response_body[:500]}") from e
+    for curr_model in models_to_try:
+        payload = {
+            "model": curr_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 6000,
+        }
+        json_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=json_data,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            },
+            method="POST",
+        )
 
-                try:
-                    return response_json["choices"][0]["message"]["content"]
-                except (KeyError, IndexError) as e:
-                    raise RuntimeError(f"Unexpected response format from API: {response_body}") from e
+        max_retries = 3
+        base_delay = 2.0
+        model_failed = False
 
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="ignore")
-            last_error = f"API error (HTTP {e.code}): {err_body}"
-            # Retry on rate limits (429) or transient server errors (500, 502, 503, 504)
-            if e.code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                sleep_time = base_delay * (2 ** (attempt - 1))
-                print(f"[retry] API returned HTTP {e.code}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
-                time.sleep(sleep_time)
-                continue
-            raise RuntimeError(last_error) from e
+        for attempt in range(1, max_retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    response_body = resp.read().decode("utf-8")
+                    try:
+                        response_json = json.loads(response_body)
+                    except json.JSONDecodeError as e:
+                        raise RuntimeError(f"Failed to parse API response as JSON: {e}\nRaw output:\n{response_body[:500]}") from e
 
-        except urllib.error.URLError as e:
-            last_error = f"Network connection error: {e}"
-            if attempt < max_retries:
-                sleep_time = base_delay * (2 ** (attempt - 1))
-                print(f"[retry] Network error: {e.reason}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
-                time.sleep(sleep_time)
-                continue
-            raise RuntimeError(last_error) from e
+                    try:
+                        return response_json["choices"][0]["message"]["content"]
+                    except (KeyError, IndexError) as e:
+                        raise RuntimeError(f"Unexpected response format from API: {response_body}") from e
 
-    raise RuntimeError(f"All {max_retries} API call attempts failed. Last error: {last_error}")
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="ignore")
+                last_error = f"API error (HTTP {e.code}): {err_body}"
+                # If model not found (404), break to try next fallback model
+                if e.code == 404 and "model_not_found" in err_body:
+                    print(f"[warn] Model '{curr_model}' not found. Trying fallback model...", file=sys.stderr)
+                    model_failed = True
+                    break
+                # Retry on rate limits (429) or transient server errors (500, 502, 503, 504)
+                if e.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    sleep_time = base_delay * (2 ** (attempt - 1))
+                    print(f"[retry] API returned HTTP {e.code}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
+                    time.sleep(sleep_time)
+                    continue
+                raise RuntimeError(last_error) from e
+
+            except urllib.error.URLError as e:
+                last_error = f"Network connection error: {e}"
+                if attempt < max_retries:
+                    sleep_time = base_delay * (2 ** (attempt - 1))
+                    print(f"[retry] Network error: {e.reason}. Retrying in {sleep_time:.1f}s (attempt {attempt}/{max_retries})...", file=sys.stderr)
+                    time.sleep(sleep_time)
+                    continue
+                raise RuntimeError(last_error) from e
+
+        if not model_failed:
+            break
+
+    raise RuntimeError(f"All API call attempts failed. Last error: {last_error}")
 
 
 # --------------------------------------------------------------------------

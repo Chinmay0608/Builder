@@ -20,7 +20,7 @@ import sys
 
 CONFIG_DIR = os.path.expanduser("~/.resume_tailor")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
 
 
 # --------------------------------------------------------------------------
