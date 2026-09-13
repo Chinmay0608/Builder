@@ -18,6 +18,18 @@ import re
 import subprocess
 import sys
 
+# Reconfigure stdout/stderr to UTF-8 for cross-platform and Windows terminal support
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 CONFIG_DIR = os.path.expanduser("~/.resume_tailor")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_MODEL = "qwen/qwen3.8-27b"
@@ -205,7 +217,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="Resume Tailor — Tailor your LaTeX resume for any job with a single command.",
-        usage="python tailor.py [job_arg] [-c COMPANY] [-r ROLE] [--paste] [--new-resume PATH] [--compile] [--setup]",
+        usage="python tailor.py [job_arg] [-c COMPANY] [-r ROLE] [--paste] [--new-resume PATH] [--compile] [--setup] [--evaluate-only]",
     )
     parser.add_argument(
         "job_arg",
@@ -255,6 +267,11 @@ def main():
         "--api-base",
         help="Custom OpenAI-compatible API base URL (e.g. for Ollama or other endpoints)",
     )
+    parser.add_argument(
+        "--evaluate-only",
+        action="store_true",
+        help="Evaluate the job description without tailoring a resume",
+    )
 
     args = parser.parse_args()
 
@@ -267,7 +284,7 @@ def main():
         return
 
     # If no config exists, auto-detect master_resume.tex or run wizard
-    if not config:
+    if not config and not args.evaluate_only:
         has_any_key = any(
             (k == "GROQ_API_KEY" or k.startswith("GROQ_API_KEY_") or k == "GROQ_API_KEYS") and v.strip()
             for k, v in os.environ.items()
@@ -284,18 +301,7 @@ def main():
             print("[info] Starting first-time setup wizard...\n")
             config = run_setup()
 
-    # 1. Determine master resume path
-    resume_path = args.new_resume or config.get("resume_path")
-    if not resume_path:
-        sys.exit("[error] No master resume path configured. Run 'python tailor.py --setup' or pass --new-resume.")
-    resume_path = os.path.expanduser(resume_path)
-    if not os.path.isfile(resume_path):
-        sys.exit(
-            f"[error] Master resume file not found: '{resume_path}'.\n"
-            f"        Run 'python tailor.py --setup' to update your configuration."
-        )
-
-    # 2. Determine Job Description source according to strict priority:
+    # 1. Determine Job Description source according to strict priority:
     #    Priority: --paste > positional arg > piped stdin > interactive fallback
     is_interactive_terminal = sys.stdin.isatty()
     job_source = None
@@ -322,10 +328,97 @@ def main():
         # Fallback to interactive multi-line paste
         job_source = read_multiline_paste()
 
+    # Resolve job description text for evaluation
+    if is_url:
+        from resume_tailor import fetch_job_from_url
+        try:
+            jd_text = fetch_job_from_url(job_source)
+        except Exception as e:
+            sys.exit(f"[error] Failed to fetch job URL: {e}")
+    elif os.path.isfile(job_source):
+        try:
+            with open(job_source, "r", encoding="utf-8") as f:
+                jd_text = f.read()
+        except OSError as e:
+            sys.exit(f"[error] Failed to read job description file '{job_source}': {e}")
+    else:
+        jd_text = job_source
+
+    # ----------------------------------------------------------------------
+    # STEP 1/2: JD Evaluation
+    # ----------------------------------------------------------------------
+    from evaluate import local_evaluate, ai_evaluate, display_evaluation
+
+    print("\n[STEP 1/2] Evaluating JD...")
+    local_result = local_evaluate(jd_text)
+
+    api_key = (config.get("api_key") if config else None) or os.environ.get("GROQ_API_KEY")
+    model_name = args.model or (config.get("model") if config else DEFAULT_MODEL) or DEFAULT_MODEL
+    api_base = args.api_base or (config.get("api_base") if config else None) or os.environ.get("GROQ_BASE_URL")
+
+    # If --evaluate-only requested, run evaluation and exit cleanly
+    if args.evaluate_only:
+        ai_result = None
+        if api_key or os.environ.get("GROQ_API_KEY_2") or os.environ.get("GROQ_API_KEYS"):
+            ai_result = ai_evaluate(jd_text, api_key=api_key, model=model_name, api_base=api_base)
+        display_evaluation(local_result, ai_result)
+        sys.exit(0)
+
+    # If hard blocks found in local check — display and ask before proceeding
+    if local_result["local_verdict"] == "SKIP":
+        display_evaluation(local_result)
+        try:
+            confirm = input("Hard blocks found. Tailor resume anyway? (y/N): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nSkipped. No resume generated.")
+            sys.exit(0)
+        if confirm != "y":
+            print("Skipped. No resume generated.")
+            sys.exit(0)
+
+    # Run AI evaluation if API key available
+    ai_result = None
+    if api_key or os.environ.get("GROQ_API_KEY_2") or os.environ.get("GROQ_API_KEYS"):
+        ai_result = ai_evaluate(jd_text, api_key=api_key, model=model_name, api_base=api_base)
+
+    display_evaluation(local_result, ai_result)
+
+    # If SKIP verdict from AI — confirm before proceeding
+    if (ai_result and ai_result.get("verdict") == "SKIP") or local_result["local_verdict"] == "SKIP":
+        try:
+            confirm = input("Verdict is SKIP. Tailor resume anyway? (y/N): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nSkipped. No resume generated.")
+            sys.exit(0)
+        if confirm != "y":
+            print("Skipped. No resume generated.")
+            sys.exit(0)
+
+    print("\n[STEP 2/2] Tailoring resume...")
+
+    # 2. Determine master resume path
+    resume_path = args.new_resume or (config.get("resume_path") if config else None)
+    if not resume_path:
+        sys.exit("[error] No master resume path configured. Run 'python tailor.py --setup' or pass --new-resume.")
+    resume_path = os.path.expanduser(resume_path)
+    if not os.path.isfile(resume_path):
+        sys.exit(
+            f"[error] Master resume file not found: '{resume_path}'.\n"
+            f"        Run 'python tailor.py --setup' to update your configuration."
+        )
+
     # 3. Determine Company and Role:
-    #    Only prompt interactively if stdin is an interactive terminal and args were not provided
     company = args.company
     role = args.role
+
+    # Auto-populate company / role from AI analysis if not explicitly provided
+    if ai_result:
+        extracted_comp = ai_result.get("company", "").strip()
+        if not company and extracted_comp and extracted_comp.lower() != "unknown":
+            company = extracted_comp
+        extracted_role = ai_result.get("role", "").strip()
+        if not role and extracted_role and extracted_role.lower() != "unknown":
+            role = extracted_role
 
     if is_interactive_terminal and not args.paste and args.job_arg:
         # If passed via positional arg, prompt for company/role only if omitted

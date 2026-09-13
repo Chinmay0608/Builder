@@ -110,6 +110,30 @@ python tailor.py jd.txt -c "Google" -r "Senior Backend Engineer" --diff
 
 ---
 
+## 🎯 JD Evaluator
+
+Before tailoring, the tool automatically evaluates the job description against candidate qualifications and work authorization:
+
+```
+✅ APPLY      → Strong fit, proceeds to tailor
+⚠️ BORDERLINE → Fit with concerns, asks to confirm before tailoring
+❌ SKIP       → Hard blocker found, stops before wasting time
+```
+
+Hard blockers that trigger auto-SKIP:
+- UK/Australia/US work authorization required
+- Primary language is C#, .NET, Elixir, Rust, Go (not in your stack)
+- Wrong domain (hardware, Oracle ERP, compliance, ML research)
+- 3+ years full-time experience required (excluding internships)
+- Leadership/mentoring role clearly above entry level
+
+To evaluate a job description without tailoring a resume:
+```bash
+python tailor.py jd.txt --evaluate-only
+```
+
+---
+
 ## 🔧 Standalone Core Engine: `resume_tailor.py`
 
 `resume_tailor.py` is the canonical engine suitable for direct CLI usage, scripts, or CI/CD pipelines:
